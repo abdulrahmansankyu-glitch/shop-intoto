@@ -413,9 +413,6 @@ textarea.io{
           <label for="in-weeks">Weeks</label>
           <input type="number" id="in-weeks" min="1" max="53" step="1">
         </div>
-        <button class="btn btn-primary" id="btn-gen-kpi">Fill KPI</button>
-        <button class="btn" id="btn-clear-kpi">Clear edits</button>
-        <button class="btn" id="btn-csv-kpi">Export CSV</button>
       </div>
       <hr class="hr">
       <div class="eyebrow" style="margin-bottom:8px;">Weekly target per task</div>
@@ -430,7 +427,13 @@ textarea.io{
   </details>
 
   <div class="card">
-    <div class="card-head"><h3>KPI matrix</h3><span class="hint" id="kpi-status"></span></div>
+    <div class="card-head">
+      <h3>KPI matrix</h3>
+      <span class="hint" id="kpi-status"></span>
+      <button class="btn btn-sm btn-primary no-print" id="btn-gen-kpi">Fill KPI</button>
+      <button class="btn btn-sm no-print" id="btn-clear-kpi">Clear edits</button>
+      <button class="btn btn-sm no-print" id="btn-csv-kpi">Export CSV</button>
+    </div>
     <div class="card-body -flush"><div class="tscroll" id="kpi-wrap"></div></div>
   </div>
 </section>
@@ -1427,7 +1430,11 @@ function csvCell(v){
   const s = String(v == null ? "" : v);
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
 }
-function download(filename, text){
+/* Saving a file works two different ways depending on where the page is
+   open: from disk it is an ordinary browser download, but inside the
+   claude.ai viewer the frame has to hand the file over and let the viewer
+   confirm it. Try the viewer first, then fall back to the plain download. */
+function saveViaLink(filename, text){
   const blob = new Blob([text], { type:"text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1437,6 +1444,35 @@ function download(filename, text){
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+async function download(filename, text){
+  let dl = null;
+  try{
+    if(typeof claude !== "undefined" && claude && typeof claude.use === "function"){
+      dl = await claude.use("downloads");
+    }
+  }catch(e){ dl = null; }
+
+  if(dl){
+    try{
+      await dl.save({ filename: filename, data: text });
+      return;
+    }catch(err){
+      const code = err && err.code;
+      if(code === "declined") return;
+      if(code === "extension_not_enabled"){
+        // CSV is not offered here — hand the same text over as .txt instead.
+        try{
+          await dl.save({ filename: filename.replace(/\.csv$/, "-csv") + ".txt", data: text });
+          return;
+        }catch(e2){
+          if(e2 && e2.code === "declined") return;
+        }
+      }
+      // anything else: fall through and try the ordinary download
+    }
+  }
+  saveViaLink(filename, text);
 }
 function csvKPI(){
   const weeks = mondays();
