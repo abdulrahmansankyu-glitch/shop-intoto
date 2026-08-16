@@ -1,0 +1,1640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety Duty Rota</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Tokens — light is the base, dark redefines tokens only.
+   ───────────────────────────────────────────────────────────── */
+:root{
+  --bg:#E9EDF0;
+  --surface:#FFFFFF;
+  --surface-2:#F2F5F8;
+  --surface-3:#E4EAEE;
+  --line:#C7D2DA;
+  --line-soft:#DFE6EB;
+  --ink:#141F28;
+  --ink-2:#3C4D5B;
+  --muted:#6B7D8B;
+  --accent:#0D5C6B;
+  --accent-2:#12798C;
+  --accent-ink:#FFFFFF;
+  --shp:#255F9E;
+  --shp-bg:#D8E7F6;
+  --shp-line:#A8C6E4;
+  --dcu:#A94848;
+  --dcu-bg:#F7DFDF;
+  --dcu-line:#E2B4B4;
+  --ok:#1B6E55;
+  --ok-bg:#DCEFE7;
+  --warn:#8E5D12;
+  --warn-bg:#F8EBD3;
+  --shadow:0 1px 0 rgba(20,31,40,.04), 0 2px 8px rgba(20,31,40,.06);
+
+  --font-ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-display:"Helvetica Neue",Helvetica,"Segoe UI",Arial,sans-serif;
+  --font-num:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1319;
+    --surface:#161F27;
+    --surface-2:#1C2731;
+    --surface-3:#243039;
+    --line:#2E3C47;
+    --line-soft:#222E37;
+    --ink:#E2EAF1;
+    --ink-2:#B2C2CE;
+    --muted:#7E93A2;
+    --accent:#3EA3B5;
+    --accent-2:#55BACC;
+    --accent-ink:#06222A;
+    --shp:#84B7EE;
+    --shp-bg:#1A2C41;
+    --shp-line:#2E4A69;
+    --dcu:#E89494;
+    --dcu-bg:#3A2323;
+    --dcu-line:#5C3636;
+    --ok:#59C09B;
+    --ok-bg:#152E27;
+    --warn:#D9A85C;
+    --warn-bg:#2E2415;
+    --shadow:0 1px 0 rgba(0,0,0,.3), 0 2px 10px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D1319;
+  --surface:#161F27;
+  --surface-2:#1C2731;
+  --surface-3:#243039;
+  --line:#2E3C47;
+  --line-soft:#222E37;
+  --ink:#E2EAF1;
+  --ink-2:#B2C2CE;
+  --muted:#7E93A2;
+  --accent:#3EA3B5;
+  --accent-2:#55BACC;
+  --accent-ink:#06222A;
+  --shp:#84B7EE;
+  --shp-bg:#1A2C41;
+  --shp-line:#2E4A69;
+  --dcu:#E89494;
+  --dcu-bg:#3A2323;
+  --dcu-line:#5C3636;
+  --ok:#59C09B;
+  --ok-bg:#152E27;
+  --warn:#D9A85C;
+  --warn-bg:#2E2415;
+  --shadow:0 1px 0 rgba(0,0,0,.3), 0 2px 10px rgba(0,0,0,.35);
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--font-ui);
+  font-size:15px;
+  line-height:1.5;
+}
+h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--font-display);}
+button,input,select,textarea{font:inherit;color:inherit;}
+:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px;}
+
+.eyebrow{
+  font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);
+}
+.num{font-family:var(--font-num);font-variant-numeric:tabular-nums;}
+
+/* ── Top bar ─────────────────────────────────────────────── */
+.topbar{
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:40;
+}
+.topbar-in{
+  max-width:1440px;margin:0 auto;padding:14px 20px;
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:12px;margin-right:auto;}
+.brand-mark{
+  width:34px;height:34px;flex:none;background:var(--accent);color:var(--accent-ink);
+  display:grid;place-items:center;font-family:var(--font-display);
+  font-weight:800;font-size:13px;letter-spacing:.04em;
+}
+.brand h1{font-size:17px;font-weight:800;letter-spacing:-.01em;line-height:1.15;}
+.brand p{margin:1px 0 0;font-size:12px;color:var(--muted);}
+
+.btn{
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  padding:7px 13px;border-radius:3px;cursor:pointer;
+  font-size:13px;font-weight:600;
+  display:inline-flex;align-items:center;gap:7px;
+  transition:background .12s,border-color .12s;
+}
+.btn:hover{background:var(--surface-2);border-color:var(--muted);}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
+.btn-primary:hover{background:var(--accent-2);border-color:var(--accent-2);}
+.btn-sm{padding:4px 9px;font-size:12px;}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted);}
+.btn-ghost:hover{background:var(--surface-2);color:var(--ink);}
+
+/* ── Duty board ──────────────────────────────────────────── */
+.board{background:var(--surface-2);border-bottom:1px solid var(--line);}
+.board-in{max-width:1440px;margin:0 auto;padding:18px 20px 20px;}
+.board-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.board-head h2{font-size:14px;font-weight:800;letter-spacing:.02em;}
+.board-head .when{font-size:12px;color:var(--muted);}
+.board-grid{
+  display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+}
+.duty-card{
+  background:var(--surface);border:1px solid var(--line-soft);
+  border-left:3px solid var(--accent);
+  padding:11px 13px;border-radius:2px;box-shadow:var(--shadow);
+}
+.duty-card.-shp{border-left-color:var(--shp);}
+.duty-card.-dcu{border-left-color:var(--dcu);}
+.duty-card h3{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.duty-names{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 8px;border-radius:2px;font-size:12.5px;font-weight:600;
+  background:var(--surface-3);border:1px solid var(--line-soft);color:var(--ink-2);
+}
+.chip.-shp{background:var(--shp-bg);border-color:var(--shp-line);color:var(--shp);}
+.chip.-dcu{background:var(--dcu-bg);border-color:var(--dcu-line);color:var(--dcu);}
+.chip .tag{font-size:9.5px;font-weight:800;letter-spacing:.09em;opacity:.75;}
+.empty-note{font-size:12.5px;color:var(--muted);font-style:italic;}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+.tabs{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:63px;z-index:30;}
+.tabs-in{max-width:1440px;margin:0 auto;padding:0 20px;display:flex;gap:2px;overflow-x:auto;}
+.tab{
+  border:0;background:transparent;color:var(--muted);cursor:pointer;
+  padding:12px 14px;font-size:13.5px;font-weight:600;white-space:nowrap;
+  border-bottom:2px solid transparent;
+}
+.tab:hover{color:var(--ink);}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* ── Layout ──────────────────────────────────────────────── */
+main{max-width:1440px;margin:0 auto;padding:22px 20px 64px;}
+.panel[hidden]{display:none;}
+.panel-head{margin-bottom:16px;}
+.panel-head h2{font-size:20px;font-weight:800;letter-spacing:-.015em;}
+.panel-head p{margin:5px 0 0;font-size:13.5px;color:var(--muted);max-width:68ch;}
+
+.card{
+  background:var(--surface);border:1px solid var(--line-soft);
+  border-radius:3px;box-shadow:var(--shadow);margin-bottom:16px;
+}
+.card-head{
+  padding:12px 15px;border-bottom:1px solid var(--line-soft);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+}
+.card-head h3{font-size:13px;font-weight:800;letter-spacing:.02em;margin-right:auto;}
+details.card > summary{cursor:pointer;list-style:none;}
+details.card > summary::-webkit-details-marker{display:none;}
+details.card > summary::before{content:"\25B8";color:var(--muted);font-size:11px;line-height:1;}
+details.card[open] > summary::before{content:"\25BE";}
+details.card:not([open]) > summary{border-bottom:0;}
+details.card > summary:hover{background:var(--surface-2);}
+.card-body{padding:15px;}
+.card-body.-flush{padding:0;}
+
+.toolbar{display:flex;gap:9px;align-items:flex-end;flex-wrap:wrap;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.field input,.field select{
+  background:var(--surface);border:1px solid var(--line);color:var(--ink);
+  padding:6px 8px;border-radius:3px;font-size:13.5px;
+}
+.field input[type="number"]{width:88px;font-family:var(--font-num);}
+
+/* ── Tables ──────────────────────────────────────────────── */
+.tscroll{overflow-x:auto;}
+table{border-collapse:collapse;width:100%;font-size:13px;}
+th,td{border:1px solid var(--line-soft);padding:6px 9px;text-align:left;}
+thead th{
+  background:var(--surface-2);font-size:11px;font-weight:800;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);
+  white-space:nowrap;
+}
+tbody td{background:var(--surface);}
+
+/* KPI matrix */
+.kpi-table{font-size:12.5px;min-width:760px;}
+.kpi-table th,.kpi-table td{padding:4px 7px;text-align:center;}
+.kpi-table .c-name{
+  text-align:left;white-space:nowrap;font-weight:700;
+  position:sticky;left:0;z-index:2;background:var(--surface);
+  border-right:1px solid var(--line);min-width:150px;
+}
+.kpi-table thead .c-name{background:var(--surface-2);z-index:3;}
+.kpi-table .c-area{
+  width:52px;font-size:10px;font-weight:800;letter-spacing:.09em;
+  position:sticky;left:150px;z-index:2;border-right:1px solid var(--line);
+}
+.kpi-table thead .c-area{background:var(--surface-2);z-index:3;}
+.kpi-table .c-area.-shp{background:var(--shp-bg);color:var(--shp);}
+.kpi-table .c-area.-dcu{background:var(--dcu-bg);color:var(--dcu);}
+.kpi-table .wk-head{
+  background:var(--accent);color:var(--accent-ink);
+  font-size:11px;letter-spacing:.1em;border-color:var(--accent);
+}
+.kpi-table .wk-dates{font-size:9.5px;font-weight:600;letter-spacing:.02em;text-transform:none;color:var(--muted);}
+.kpi-table .tgt{font-size:10px;color:var(--muted);font-family:var(--font-num);}
+.kpi-table td.slot{cursor:pointer;height:26px;padding:0;position:relative;user-select:none;}
+.kpi-table td.slot.-shp{background:color-mix(in srgb,var(--shp-bg) 42%,var(--surface));}
+.kpi-table td.slot.-dcu{background:color-mix(in srgb,var(--dcu-bg) 42%,var(--surface));}
+.kpi-table td.slot:hover{outline:2px solid var(--accent-2);outline-offset:-2px;}
+.kpi-table td.slot.on{font-weight:800;font-family:var(--font-num);}
+.kpi-table td.slot.on.-shp{background:var(--shp-bg);color:var(--shp);}
+.kpi-table td.slot.on.-dcu{background:var(--dcu-bg);color:var(--dcu);}
+.kpi-table td.slot.edited::after{
+  content:"";position:absolute;top:1px;right:1px;
+  border:3px solid transparent;border-top-color:var(--warn);border-right-color:var(--warn);
+}
+.kpi-table .wk-sep{border-left:2px solid var(--line);}
+.kpi-table tfoot td{background:var(--surface-2);font-weight:800;font-family:var(--font-num);}
+.kpi-table tfoot td.short{color:var(--warn);background:var(--warn-bg);}
+.kpi-table tfoot .c-name,.kpi-table tfoot .c-area{background:var(--surface-2);}
+
+/* rota tables with selects */
+.rota-table{min-width:640px;}
+.rota-table td{padding:4px 5px;}
+.rota-table .c-date{white-space:nowrap;font-family:var(--font-num);font-size:12.5px;font-weight:700;}
+.rota-table .c-week{white-space:nowrap;font-family:var(--font-num);font-size:11.5px;color:var(--muted);}
+.pick{
+  width:100%;min-width:130px;border:1px solid var(--line);border-radius:2px;
+  background:var(--surface);padding:4px 5px;font-size:12.5px;font-weight:600;
+}
+.pick.-shp{background:var(--shp-bg);border-color:var(--shp-line);color:var(--shp);}
+.pick.-dcu{background:var(--dcu-bg);border-color:var(--dcu-line);color:var(--dcu);}
+.pick.-none{color:var(--muted);font-weight:400;font-style:italic;}
+.cellpair{display:flex;gap:5px;}
+.rowmark{
+  display:inline-block;font-size:10px;font-weight:800;letter-spacing:.09em;
+  padding:2px 6px;border-radius:2px;
+}
+.rowmark.-shp{background:var(--shp-bg);color:var(--shp);}
+.rowmark.-dcu{background:var(--dcu-bg);color:var(--dcu);}
+
+/* Team */
+.team-list{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));}
+.member{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:9px 11px;
+  border:1px solid var(--line-soft);border-radius:3px;background:var(--surface-2);
+}
+.member.-off{opacity:.55;}
+.member input[type="text"]{
+  flex:1 1 100%;min-width:0;
+  border:1px solid transparent;background:transparent;font-weight:700;
+  padding:4px 6px;border-radius:2px;
+}
+.member input[type="text"]:hover,.member input[type="text"]:focus{
+  border-color:var(--line);background:var(--surface);
+}
+.switch{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;margin-right:auto;}
+
+/* Balance bars */
+.bar{position:relative;height:16px;background:var(--surface-3);border-radius:2px;overflow:hidden;min-width:90px;}
+.bar span{position:absolute;inset:0 auto 0 0;background:var(--accent);opacity:.8;}
+.bar.-hi span{background:var(--warn);}
+.bar.-lo span{background:var(--shp);}
+
+/* Person view */
+.person-week{border:1px solid var(--line-soft);border-radius:3px;margin-bottom:9px;background:var(--surface);}
+.person-week > header{
+  padding:8px 12px;background:var(--surface-2);border-bottom:1px solid var(--line-soft);
+  display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;
+}
+.person-week > header .wk{font-family:var(--font-num);font-weight:800;font-size:12.5px;}
+.person-week > header .rng{font-size:11.5px;color:var(--muted);}
+.person-week ul{list-style:none;margin:0;padding:9px 12px;display:flex;flex-direction:column;gap:6px;}
+.person-week li{display:flex;align-items:center;gap:9px;font-size:13.5px;}
+.person-week li .what{font-weight:600;}
+.person-week li .meta{color:var(--muted);font-size:12px;margin-left:auto;font-family:var(--font-num);}
+
+.stat-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.stat{
+  background:var(--surface);border:1px solid var(--line-soft);border-radius:3px;
+  padding:10px 14px;min-width:112px;box-shadow:var(--shadow);
+}
+.stat .k{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);}
+.stat .v{font-family:var(--font-num);font-size:24px;font-weight:700;line-height:1.15;margin-top:2px;}
+
+.notice{
+  border:1px solid var(--line);border-left:3px solid var(--warn);
+  background:var(--warn-bg);color:var(--ink-2);
+  padding:9px 12px;border-radius:2px;font-size:13px;margin-bottom:14px;
+}
+.hint{font-size:12.5px;color:var(--muted);}
+.hr{height:1px;background:var(--line-soft);margin:14px 0;border:0;}
+
+textarea.io{
+  width:100%;min-height:150px;font-family:var(--font-num);font-size:12px;
+  border:1px solid var(--line);border-radius:3px;padding:9px;background:var(--surface-2);
+}
+
+@media (max-width:640px){
+  .tabs{top:auto;position:static;}
+  .brand p{display:none;}
+}
+@media print{
+  .topbar,.tabs,.toolbar,.no-print{display:none !important;}
+  body{background:#fff;}
+  .card{box-shadow:none;break-inside:avoid;}
+  main{padding:0;max-width:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important;}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <div class="brand-mark">RT</div>
+      <div>
+        <h1>Safety Duty Rota</h1>
+        <p>Who does what, which week, in which area</p>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="btn-fill">Fill schedule</button>
+    <button class="btn" id="btn-print">Print</button>
+    <button class="btn btn-ghost" id="btn-theme" title="Switch light / dark">Theme</button>
+  </div>
+</header>
+
+<section class="board">
+  <div class="board-in">
+    <div class="board-head">
+      <h2>On duty this week</h2>
+      <span class="when" id="board-when"></span>
+    </div>
+    <div class="board-grid" id="board-grid"></div>
+  </div>
+</section>
+
+<nav class="tabs">
+  <div class="tabs-in" role="tablist" id="tabs"></div>
+</nav>
+
+<main>
+
+<!-- ── Safety KPI ─────────────────────────────────────────── -->
+<section class="panel" id="panel-kpi" role="tabpanel">
+  <div class="panel-head">
+    <h2>Safety KPI</h2>
+    <p>Each week every task needs its target filled in both areas. Click any cell to move a name in or out — edited cells keep a corner mark and survive the next fill.</p>
+  </div>
+
+  <details class="card no-print">
+    <summary class="card-head">
+      <h3>Schedule window &amp; targets</h3>
+      <span class="hint" id="window-summary"></span>
+    </summary>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="field">
+          <label for="in-start">Start week (Monday)</label>
+          <input type="date" id="in-start">
+        </div>
+        <div class="field">
+          <label for="in-weeks">Weeks</label>
+          <input type="number" id="in-weeks" min="1" max="53" step="1">
+        </div>
+        <button class="btn btn-primary" id="btn-gen-kpi">Fill KPI</button>
+        <button class="btn" id="btn-clear-kpi">Clear edits</button>
+        <button class="btn" id="btn-csv-kpi">Export CSV</button>
+      </div>
+      <hr class="hr">
+      <div class="eyebrow" style="margin-bottom:8px;">Weekly target per task</div>
+      <div class="tscroll">
+        <table id="tbl-targets" style="width:auto;">
+          <thead><tr><th>Task</th><th>SHP</th><th>DCU</th><th>Per week</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div style="margin-top:9px;"><button class="btn btn-sm" id="btn-add-task">Add task</button></div>
+    </div>
+  </details>
+
+  <div class="card">
+    <div class="card-head"><h3>KPI matrix</h3><span class="hint" id="kpi-status"></span></div>
+    <div class="card-body -flush"><div class="tscroll" id="kpi-wrap"></div></div>
+  </div>
+</section>
+
+<!-- ── Walkthrough ────────────────────────────────────────── -->
+<section class="panel" id="panel-wt" role="tabpanel">
+  <div class="panel-head">
+    <h2>Internal walkthrough</h2>
+    <p>Every Monday, two people walk each area. Change anyone with the dropdown — a manual pick is locked and the next fill works around it.</p>
+  </div>
+  <div class="card no-print">
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="field">
+          <label for="in-wt-per">People per area</label>
+          <input type="number" id="in-wt-per" min="1" max="6" step="1">
+        </div>
+        <button class="btn btn-primary" id="btn-gen-wt">Fill walkthrough</button>
+        <button class="btn" id="btn-clear-wt">Clear edits</button>
+        <button class="btn" id="btn-csv-wt">Export CSV</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Walkthrough rota</h3></div>
+    <div class="card-body -flush"><div class="tscroll" id="wt-wrap"></div></div>
+  </div>
+</section>
+
+<!-- ── Weekend ────────────────────────────────────────────── -->
+<section class="panel" id="panel-we" role="tabpanel">
+  <div class="panel-head">
+    <h2>Weekend coverage</h2>
+    <p>One person covers each Saturday, in strict rotation — nobody takes a second weekend until everyone has taken a first.</p>
+  </div>
+  <div class="card no-print">
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="field">
+          <label for="in-we-per">People per weekend</label>
+          <input type="number" id="in-we-per" min="1" max="4" step="1">
+        </div>
+        <button class="btn btn-primary" id="btn-gen-we">Fill weekends</button>
+        <button class="btn" id="btn-clear-we">Clear edits</button>
+        <button class="btn" id="btn-csv-we">Export CSV</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Weekend rota</h3></div>
+    <div class="card-body -flush"><div class="tscroll" id="we-wrap"></div></div>
+  </div>
+</section>
+
+<!-- ── By person ──────────────────────────────────────────── -->
+<section class="panel" id="panel-person" role="tabpanel">
+  <div class="panel-head">
+    <h2>By person</h2>
+    <p>Everything one person owes, week by week. Copy it and send it to them.</p>
+  </div>
+  <div class="card no-print">
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="field">
+          <label for="in-person">Person</label>
+          <select id="in-person"></select>
+        </div>
+        <button class="btn" id="btn-copy-person">Copy as text</button>
+        <span class="hint" id="copy-status"></span>
+      </div>
+    </div>
+  </div>
+  <div id="person-stats" class="stat-row"></div>
+  <div id="person-wrap"></div>
+</section>
+
+<!-- ── Team ───────────────────────────────────────────────── -->
+<section class="panel" id="panel-team" role="tabpanel">
+  <div class="panel-head">
+    <h2>Team</h2>
+    <p>Untick someone on leave and they are skipped by the next fill. Their existing duties stay put so you can reassign them yourself.</p>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h3>Members</h3>
+      <button class="btn btn-sm no-print" id="btn-add-person">Add person</button>
+    </div>
+    <div class="card-body"><div class="team-list" id="team-list"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Workload balance</h3></div>
+    <div class="card-body -flush"><div class="tscroll" id="balance-wrap"></div></div>
+  </div>
+
+  <div class="card no-print">
+    <div class="card-head"><h3>Backup</h3></div>
+    <div class="card-body">
+      <p class="hint" style="margin:0 0 10px;">The rota is saved in this browser. Copy the text below to keep a backup, or paste a backup in and load it.</p>
+      <div class="toolbar" style="margin-bottom:10px;">
+        <button class="btn" id="btn-dump">Show backup</button>
+        <button class="btn" id="btn-load">Load pasted backup</button>
+        <button class="btn" id="btn-reset">Start over</button>
+      </div>
+      <textarea class="io" id="io" spellcheck="false" placeholder="Backup text appears here."></textarea>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════
+   Storage
+   ══════════════════════════════════════════════════════════ */
+const STORE_KEY = "safety-duty-rota-v1";
+let memoryStore = null;
+
+function storeRead(){
+  try { return localStorage.getItem(STORE_KEY); }
+  catch(e){ return memoryStore; }
+}
+function storeWrite(txt){
+  try { localStorage.setItem(STORE_KEY, txt); }
+  catch(e){ memoryStore = txt; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   Dates — everything is a UTC midnight Date, so no drift
+   ══════════════════════════════════════════════════════════ */
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function today(){
+  const n = new Date();
+  return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()));
+}
+function parseISO(s){
+  const p = String(s).split("-").map(Number);
+  return new Date(Date.UTC(p[0], p[1]-1, p[2]));
+}
+function toISO(d){
+  return d.getUTCFullYear() + "-" +
+    String(d.getUTCMonth()+1).padStart(2,"0") + "-" +
+    String(d.getUTCDate()).padStart(2,"0");
+}
+function addDays(d,n){
+  const x = new Date(d.getTime());
+  x.setUTCDate(x.getUTCDate()+n);
+  return x;
+}
+function mondayOf(d){
+  return addDays(d, -((d.getUTCDay()+6)%7));
+}
+function fmtDate(d){
+  return d.getUTCDate() + "-" + MONTHS[d.getUTCMonth()] + "-" + String(d.getUTCFullYear()).slice(2);
+}
+function fmtShort(d){
+  return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()];
+}
+/* ISO-8601 week number */
+function isoWeek(d){
+  const t = new Date(d.getTime());
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay()+6)%7) + 3);   // Thursday of this week
+  const year = t.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(year,0,4));
+  const week = 1 + Math.round((t - jan4)/86400000 / 7);
+  return { year, week };
+}
+function weekKeyOf(d){
+  const w = isoWeek(d);
+  return w.year + "-W" + String(w.week).padStart(2,"0");
+}
+function weekLabelOf(d){
+  return "W" + String(isoWeek(d).week).padStart(2,"0");
+}
+
+/* ══════════════════════════════════════════════════════════
+   State
+   ══════════════════════════════════════════════════════════ */
+const AREAS = ["SHP","DCU"];
+const SEED_NAMES = ["Ahmed Malainine","Nandy","Essam","Abdulrahman","Rehan","Aslam","Faiz","Ahmed Al subhi"];
+
+let nextId = 1;
+function newId(){ return "p" + (nextId++); }
+
+function defaultState(){
+  nextId = 1;
+  return {
+    v: 1,
+    people: SEED_NAMES.map(n => ({ id:newId(), name:n, active:true })),
+    tasks: [
+      { key:"WPA", SHP:2, DCU:2 },
+      { key:"UCO", SHP:1, DCU:1 },
+      { key:"BOP", SHP:1, DCU:1 },
+      { key:"SM",  SHP:1, DCU:1 }
+    ],
+    startISO: toISO(mondayOf(today())),
+    weeks: 8,
+    wtPerArea: 2,
+    wePerDate: 1,
+    kpi:  { data:{}, locked:{} },   // data[weekKey][taskKey][area] = [id]
+    wt:   { data:{}, locked:{} },   // data[dateISO][area] = [id]
+    we:   { data:{}, locked:{} }    // data[dateISO] = [id]
+  };
+}
+
+let S = load();
+
+function load(){
+  const raw = storeRead();
+  if(!raw) return defaultState();
+  try{
+    const o = JSON.parse(raw);
+    if(!o || !Array.isArray(o.people) || !o.people.length) return defaultState();
+    // keep the id counter ahead of anything already stored
+    let max = 0;
+    o.people.forEach(p => {
+      const n = parseInt(String(p.id).replace(/\D/g,""), 10);
+      if(n > max) max = n;
+    });
+    nextId = max + 1;
+    const d = defaultState();
+    return Object.assign(d, o, {
+      kpi: Object.assign({data:{},locked:{}}, o.kpi),
+      wt:  Object.assign({data:{},locked:{}}, o.wt),
+      we:  Object.assign({data:{},locked:{}}, o.we)
+    });
+  }catch(e){ return defaultState(); }
+}
+function save(){ storeWrite(JSON.stringify(S)); }
+
+/* ══════════════════════════════════════════════════════════
+   Derived helpers
+   ══════════════════════════════════════════════════════════ */
+function mondays(){
+  const start = mondayOf(parseISO(S.startISO));
+  const out = [];
+  for(let i=0;i<S.weeks;i++) out.push(addDays(start, i*7));
+  return out;
+}
+function saturdays(){
+  return mondays().map(m => addDays(m,5));
+}
+function personById(id){ return S.people.find(p => p.id === id) || null; }
+function nameOf(id){ const p = personById(id); return p ? p.name : "—"; }
+function activePeople(){ return S.people.filter(p => p.active); }
+function orderOf(id){ return S.people.findIndex(p => p.id === id); }
+
+/* ══════════════════════════════════════════════════════════
+   The fill engine
+
+   One rule decides every slot: among the people who are still
+   eligible, take whoever is carrying the least. Ties break by
+   total load, then by how long ago they last had a turn, then
+   by roster order — so the result is deterministic and the
+   same inputs always produce the same rota.
+   ══════════════════════════════════════════════════════════ */
+function makeCtx(){
+  return {
+    load: new Map(),      // id -> total duties assigned
+    last: new Map(),      // id -> index of most recent period
+    period: 0
+  };
+}
+function bump(ctx, id, periodUse){
+  ctx.load.set(id, (ctx.load.get(id)||0) + 1);
+  ctx.last.set(id, ctx.period);
+  if(periodUse) periodUse.set(id, (periodUse.get(id)||0) + 1);
+}
+function pick(ctx, n, opts){
+  const periodUse = opts.periodUse || new Map();
+  const taken = new Set(opts.exclude || []);
+  const extra = opts.extraLoad || null;     // secondary balance, e.g. per-area
+  const out = [];
+  for(let k=0;k<n;k++){
+    const cands = activePeople().filter(p => !taken.has(p.id));
+    if(!cands.length) break;
+    cands.sort((a,b) =>
+      (periodUse.get(a.id)||0) - (periodUse.get(b.id)||0) ||
+      (ctx.load.get(a.id)||0)  - (ctx.load.get(b.id)||0)  ||
+      (extra ? (extra.get(a.id)||0) - (extra.get(b.id)||0) : 0) ||
+      (ctx.last.has(a.id) ? ctx.last.get(a.id) : -1e9) - (ctx.last.has(b.id) ? ctx.last.get(b.id) : -1e9) ||
+      orderOf(a.id) - orderOf(b.id)
+    );
+    const chosen = cands[0].id;
+    out.push(chosen);
+    taken.add(chosen);
+    bump(ctx, chosen, periodUse);
+    if(extra) extra.set(chosen, (extra.get(chosen)||0) + 1);
+  }
+  return out;
+}
+
+function fillKPI(){
+  const ctx = makeCtx();
+  const weeks = mondays();
+  weeks.forEach((mon, wi) => {
+    const wk = weekKeyOf(mon);
+    ctx.period = wi;
+    const weekUse = new Map();
+    S.kpi.data[wk] = S.kpi.data[wk] || {};
+
+    S.tasks.forEach(task => {
+      const bucket = S.kpi.data[wk][task.key] = S.kpi.data[wk][task.key] || {};
+      const usedInTask = new Set();
+
+      // pass 1 — honour locked cells and count them toward the load
+      AREAS.forEach(area => {
+        if(S.kpi.locked[wk+"|"+task.key+"|"+area]){
+          (bucket[area]||[]).forEach(id => {
+            usedInTask.add(id);
+            bump(ctx, id, weekUse);
+          });
+        }
+      });
+      // pass 2 — fill the rest
+      AREAS.forEach(area => {
+        if(S.kpi.locked[wk+"|"+task.key+"|"+area]) return;
+        const need = Math.max(0, Number(task[area])||0);
+        const got = pick(ctx, need, { periodUse: weekUse, exclude: usedInTask });
+        got.forEach(id => usedInTask.add(id));
+        bucket[area] = got;
+      });
+    });
+  });
+  save();
+}
+
+function fillWT(){
+  const ctx = makeCtx();
+  const areaLoad = { SHP:new Map(), DCU:new Map() };
+  mondays().forEach((mon, wi) => {
+    const key = toISO(mon);
+    ctx.period = wi;
+    const dayUse = new Map();
+    const slot = S.wt.data[key] = S.wt.data[key] || {};
+    const usedToday = new Set();
+
+    AREAS.forEach(area => {
+      if(S.wt.locked[key+"|"+area]){
+        (slot[area]||[]).forEach(id => {
+          usedToday.add(id);
+          bump(ctx, id, dayUse);
+          areaLoad[area].set(id, (areaLoad[area].get(id)||0)+1);
+        });
+      }
+    });
+    AREAS.forEach(area => {
+      if(S.wt.locked[key+"|"+area]) return;
+      const got = pick(ctx, S.wtPerArea, {
+        periodUse: dayUse, exclude: usedToday, extraLoad: areaLoad[area]
+      });
+      got.forEach(id => usedToday.add(id));
+      slot[area] = got;
+    });
+  });
+  save();
+}
+
+function fillWE(){
+  const ctx = makeCtx();
+  saturdays().forEach((sat, wi) => {
+    const key = toISO(sat);
+    ctx.period = wi;
+    if(S.we.locked[key]){
+      (S.we.data[key]||[]).forEach(id => bump(ctx, id, null));
+      return;
+    }
+    S.we.data[key] = pick(ctx, S.wePerDate, {});
+  });
+  save();
+}
+
+function fillAll(){ fillKPI(); fillWT(); fillWE(); }
+
+/* ══════════════════════════════════════════════════════════
+   Reading the rota back out
+   ══════════════════════════════════════════════════════════ */
+function kpiOf(wk, taskKey, area){
+  const w = S.kpi.data[wk]; if(!w) return [];
+  const t = w[taskKey];     if(!t) return [];
+  return t[area] || [];
+}
+function wtOf(dateISO, area){
+  const d = S.wt.data[dateISO]; if(!d) return [];
+  return d[area] || [];
+}
+function weOf(dateISO){ return S.we.data[dateISO] || []; }
+
+/* Every duty for one person across the whole window. */
+function dutiesFor(id){
+  const out = [];
+  mondays().forEach(mon => {
+    const wk = weekKeyOf(mon);
+    const sat = addDays(mon,5);
+    S.tasks.forEach(task => {
+      AREAS.forEach(area => {
+        if(kpiOf(wk, task.key, area).includes(id)){
+          out.push({ mon, wk, kind:"KPI", what:task.key, area, when:"" });
+        }
+      });
+    });
+    AREAS.forEach(area => {
+      if(wtOf(toISO(mon), area).includes(id)){
+        out.push({ mon, wk, kind:"Walkthrough", what:"Walkthrough", area, when:fmtDate(mon) });
+      }
+    });
+    if(weOf(toISO(sat)).includes(id)){
+      out.push({ mon, wk, kind:"Weekend", what:"Weekend cover", area:"", when:fmtDate(sat) });
+    }
+  });
+  return out;
+}
+
+function countsFor(id){
+  const d = dutiesFor(id);
+  return {
+    kpi: d.filter(x => x.kind === "KPI").length,
+    wt:  d.filter(x => x.kind === "Walkthrough").length,
+    we:  d.filter(x => x.kind === "Weekend").length,
+    total: d.length
+  };
+}
+
+/* ══════════════════════════════════════════════════════════
+   Rendering — duty board
+   ══════════════════════════════════════════════════════════ */
+const $  = sel => document.querySelector(sel);
+const el = (tag, cls, txt) => {
+  const n = document.createElement(tag);
+  if(cls) n.className = cls;
+  if(txt != null) n.textContent = txt;
+  return n;
+};
+
+function renderBoard(){
+  const mon  = mondayOf(today());
+  const wk   = weekKeyOf(mon);
+  const sat  = addDays(mon,5);
+  const grid = $("#board-grid");
+  grid.textContent = "";
+
+  $("#board-when").textContent =
+    weekLabelOf(mon) + " · " + fmtShort(mon) + " – " + fmtShort(addDays(mon,6));
+
+  const inWindow = mondays().some(m => toISO(m) === toISO(mon));
+  if(!inWindow){
+    const note = el("div","empty-note",
+      "This week sits outside the schedule window — set the start week on the Safety KPI tab to see it here.");
+    grid.appendChild(note);
+    return;
+  }
+
+  S.tasks.forEach(task => {
+    const card = el("div","duty-card");
+    card.appendChild(el("h3", null, task.key));
+    const names = el("div","duty-names");
+    let any = false;
+    AREAS.forEach(area => {
+      kpiOf(wk, task.key, area).forEach(id => {
+        any = true;
+        const c = el("span","chip -"+area.toLowerCase());
+        c.appendChild(el("span","tag", area));
+        c.appendChild(document.createTextNode(nameOf(id)));
+        names.appendChild(c);
+      });
+    });
+    if(!any) names.appendChild(el("span","empty-note","Nobody assigned"));
+    card.appendChild(names);
+    grid.appendChild(card);
+  });
+
+  AREAS.forEach(area => {
+    const card = el("div","duty-card -"+area.toLowerCase());
+    card.appendChild(el("h3", null, "Walkthrough · " + area));
+    const names = el("div","duty-names");
+    const list = wtOf(toISO(mon), area);
+    if(!list.length) names.appendChild(el("span","empty-note","Nobody assigned"));
+    list.forEach(id => names.appendChild(el("span","chip -"+area.toLowerCase(), nameOf(id))));
+    card.appendChild(names);
+    grid.appendChild(card);
+  });
+
+  const wcard = el("div","duty-card");
+  wcard.appendChild(el("h3", null, "Weekend · " + fmtDate(sat)));
+  const wnames = el("div","duty-names");
+  const wlist = weOf(toISO(sat));
+  if(!wlist.length) wnames.appendChild(el("span","empty-note","Nobody assigned"));
+  wlist.forEach(id => wnames.appendChild(el("span","chip", nameOf(id))));
+  wcard.appendChild(wnames);
+  grid.appendChild(wcard);
+}
+
+/* ══════════════════════════════════════════════════════════
+   Rendering — KPI matrix
+   ══════════════════════════════════════════════════════════ */
+function renderKPI(){
+  const wrap = $("#kpi-wrap");
+  wrap.textContent = "";
+  const weeks = mondays();
+
+  const table = el("table","kpi-table");
+  const thead = el("thead");
+
+  // row 1 — week labels
+  const r1 = el("tr");
+  const th1 = el("th","c-name","Team member");
+  th1.rowSpan = 3;
+  r1.appendChild(th1);
+  const th2 = el("th","c-area","Area");
+  th2.rowSpan = 3;
+  r1.appendChild(th2);
+  weeks.forEach(mon => {
+    const th = el("th","wk-head wk-sep");
+    th.colSpan = S.tasks.length;
+    th.appendChild(document.createTextNode(weekLabelOf(mon)));
+    const d = el("div","wk-dates", fmtShort(mon) + " – " + fmtShort(addDays(mon,6)));
+    th.appendChild(d);
+    r1.appendChild(th);
+  });
+  thead.appendChild(r1);
+
+  // row 2 — task keys
+  const r2 = el("tr");
+  weeks.forEach(() => {
+    S.tasks.forEach((task, ti) => {
+      const th = el("th", ti === 0 ? "wk-sep" : "", task.key);
+      r2.appendChild(th);
+    });
+  });
+  thead.appendChild(r2);
+
+  // row 3 — targets
+  const r3 = el("tr");
+  weeks.forEach(() => {
+    S.tasks.forEach((task, ti) => {
+      const th = el("th", "tgt" + (ti === 0 ? " wk-sep" : ""),
+        (Number(task.SHP)||0) + "+" + (Number(task.DCU)||0));
+      r3.appendChild(th);
+    });
+  });
+  thead.appendChild(r3);
+  table.appendChild(thead);
+
+  // body — two rows per person
+  const tbody = el("tbody");
+  S.people.forEach(p => {
+    AREAS.forEach((area, ai) => {
+      const tr = el("tr");
+      if(ai === 0){
+        const td = el("td","c-name");
+        td.rowSpan = AREAS.length;
+        td.textContent = p.name + (p.active ? "" : " (off)");
+        if(!p.active) td.style.color = "var(--muted)";
+        tr.appendChild(td);
+      }
+      const ta = el("td","c-area -"+area.toLowerCase(), area);
+      ta.rowSpan = 1;
+      tr.appendChild(ta);
+
+      weeks.forEach(mon => {
+        const wk = weekKeyOf(mon);
+        S.tasks.forEach((task, ti) => {
+          const on = kpiOf(wk, task.key, area).includes(p.id);
+          const edited = !!S.kpi.locked[wk+"|"+task.key+"|"+area];
+          let cls = "slot -" + area.toLowerCase();
+          if(on) cls += " on";
+          if(edited) cls += " edited";
+          if(ti === 0) cls += " wk-sep";
+          const td = el("td", cls, on ? "1" : "");
+          td.title = p.name + " · " + task.key + " · " + area + " · " + wk;
+          td.addEventListener("click", () => toggleKPI(wk, task.key, area, p.id));
+          tr.appendChild(td);
+        });
+      });
+      tbody.appendChild(tr);
+    });
+  });
+  table.appendChild(tbody);
+
+  // footer — actual vs target
+  const tfoot = el("tfoot");
+  const tf = el("tr");
+  const tdn = el("td","c-name","Total");
+  tf.appendChild(tdn);
+  tf.appendChild(el("td","c-area",""));
+  weeks.forEach(mon => {
+    const wk = weekKeyOf(mon);
+    S.tasks.forEach((task, ti) => {
+      const got = AREAS.reduce((n,a) => n + kpiOf(wk, task.key, a).length, 0);
+      const want = (Number(task.SHP)||0) + (Number(task.DCU)||0);
+      const td = el("td", (got < want ? "short " : "") + (ti === 0 ? "wk-sep" : ""), String(got));
+      td.title = "Target " + want;
+      tf.appendChild(td);
+    });
+  });
+  tfoot.appendChild(tf);
+  table.appendChild(tfoot);
+
+  wrap.appendChild(table);
+
+  // status line
+  let missing = 0;
+  weeks.forEach(mon => {
+    const wk = weekKeyOf(mon);
+    S.tasks.forEach(task => {
+      AREAS.forEach(a => {
+        missing += Math.max(0, (Number(task[a])||0) - kpiOf(wk, task.key, a).length);
+      });
+    });
+  });
+  $("#kpi-status").textContent = missing
+    ? missing + " slot" + (missing===1?"":"s") + " still unfilled"
+    : "All targets met";
+}
+
+function toggleKPI(wk, taskKey, area, id){
+  S.kpi.data[wk] = S.kpi.data[wk] || {};
+  S.kpi.data[wk][taskKey] = S.kpi.data[wk][taskKey] || {};
+  const list = S.kpi.data[wk][taskKey][area] || [];
+  const i = list.indexOf(id);
+  if(i >= 0) list.splice(i,1); else list.push(id);
+  S.kpi.data[wk][taskKey][area] = list;
+  S.kpi.locked[wk+"|"+taskKey+"|"+area] = true;
+  save();
+  renderKPI(); renderBoard(); renderBalance(); renderPerson();
+}
+
+/* ══════════════════════════════════════════════════════════
+   Rendering — walkthrough + weekend
+   ══════════════════════════════════════════════════════════ */
+function personSelect(currentId, area, onChange){
+  const sel = el("select","pick" + (area ? " -"+area.toLowerCase() : ""));
+  const none = el("option", null, "— not set —");
+  none.value = "";
+  sel.appendChild(none);
+  S.people.forEach(p => {
+    const o = el("option", null, p.name + (p.active ? "" : " (off)"));
+    o.value = p.id;
+    sel.appendChild(o);
+  });
+  sel.value = currentId || "";
+  if(!currentId) sel.classList.add("-none");
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+
+function renderWT(){
+  const wrap = $("#wt-wrap");
+  wrap.textContent = "";
+  const table = el("table","rota-table");
+
+  const thead = el("thead");
+  const hr = el("tr");
+  hr.appendChild(el("th",null,"Week"));
+  hr.appendChild(el("th",null,"Date"));
+  hr.appendChild(el("th",null,"Area"));
+  for(let i=0;i<S.wtPerArea;i++) hr.appendChild(el("th",null,"Person " + (i+1)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  mondays().forEach(mon => {
+    const key = toISO(mon);
+    AREAS.forEach((area, ai) => {
+      const tr = el("tr");
+      if(ai === 0){
+        const tw = el("td","c-week", weekLabelOf(mon));
+        tw.rowSpan = AREAS.length;
+        tr.appendChild(tw);
+        const td = el("td","c-date", fmtDate(mon));
+        td.rowSpan = AREAS.length;
+        tr.appendChild(td);
+      }
+      const ta = el("td");
+      ta.appendChild(el("span","rowmark -"+area.toLowerCase(), area));
+      tr.appendChild(ta);
+
+      const list = wtOf(key, area);
+      for(let i=0;i<S.wtPerArea;i++){
+        const td = el("td");
+        td.appendChild(personSelect(list[i], area, val => {
+          const cur = (S.wt.data[key] && S.wt.data[key][area]) ? S.wt.data[key][area].slice() : [];
+          while(cur.length < S.wtPerArea) cur.push(undefined);
+          cur[i] = val || undefined;
+          S.wt.data[key] = S.wt.data[key] || {};
+          S.wt.data[key][area] = cur.filter(Boolean);
+          S.wt.locked[key+"|"+area] = true;
+          save();
+          renderWT(); renderBoard(); renderBalance(); renderPerson();
+        }));
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
+function renderWE(){
+  const wrap = $("#we-wrap");
+  wrap.textContent = "";
+  const table = el("table","rota-table");
+
+  const thead = el("thead");
+  const hr = el("tr");
+  hr.appendChild(el("th",null,"Week"));
+  hr.appendChild(el("th",null,"Saturday"));
+  for(let i=0;i<S.wePerDate;i++) hr.appendChild(el("th",null,"On cover"));
+  hr.appendChild(el("th",null,"Turns so far"));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const seen = new Map();
+  const tbody = el("tbody");
+  saturdays().forEach(sat => {
+    const key = toISO(sat);
+    const tr = el("tr");
+    tr.appendChild(el("td","c-week", weekLabelOf(sat)));
+    tr.appendChild(el("td","c-date", fmtDate(sat)));
+    const list = weOf(key);
+    for(let i=0;i<S.wePerDate;i++){
+      const td = el("td");
+      td.appendChild(personSelect(list[i], "", val => {
+        const cur = (S.we.data[key] || []).slice();
+        while(cur.length < S.wePerDate) cur.push(undefined);
+        cur[i] = val || undefined;
+        S.we.data[key] = cur.filter(Boolean);
+        S.we.locked[key] = true;
+        save();
+        renderWE(); renderBoard(); renderBalance(); renderPerson();
+      }));
+      tr.appendChild(td);
+    }
+    list.forEach(id => seen.set(id, (seen.get(id)||0)+1));
+    const counts = list.map(id => nameOf(id) + " ×" + (seen.get(id)||0)).join(", ");
+    tr.appendChild(el("td","num", counts || "—"));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
+/* ══════════════════════════════════════════════════════════
+   Rendering — team, balance, person
+   ══════════════════════════════════════════════════════════ */
+function renderTeam(){
+  const list = $("#team-list");
+  list.textContent = "";
+  S.people.forEach(p => {
+    const row = el("div","member" + (p.active ? "" : " -off"));
+
+    const name = el("input");
+    name.type = "text";
+    name.value = p.name;
+    name.setAttribute("aria-label","Name");
+    name.addEventListener("change", () => {
+      p.name = name.value.trim() || p.name;
+      save(); renderAll();
+    });
+    row.appendChild(name);
+
+    const sw = el("label","switch");
+    const cb = el("input");
+    cb.type = "checkbox";
+    cb.checked = p.active;
+    cb.addEventListener("change", () => { p.active = cb.checked; save(); renderAll(); });
+    sw.appendChild(cb);
+    sw.appendChild(document.createTextNode("Available"));
+    row.appendChild(sw);
+
+    const del = el("button","btn btn-sm btn-ghost no-print","Remove");
+    del.addEventListener("click", () => {
+      if(!confirm("Remove " + p.name + " from the team? Their existing duties are cleared too.")) return;
+      removePerson(p.id);
+    });
+    row.appendChild(del);
+
+    list.appendChild(row);
+  });
+}
+
+function removePerson(id){
+  S.people = S.people.filter(p => p.id !== id);
+  const strip = arr => arr.filter(x => x !== id);
+  Object.keys(S.kpi.data).forEach(wk =>
+    Object.keys(S.kpi.data[wk]).forEach(tk =>
+      AREAS.forEach(a => {
+        if(S.kpi.data[wk][tk][a]) S.kpi.data[wk][tk][a] = strip(S.kpi.data[wk][tk][a]);
+      })));
+  Object.keys(S.wt.data).forEach(d =>
+    AREAS.forEach(a => {
+      if(S.wt.data[d][a]) S.wt.data[d][a] = strip(S.wt.data[d][a]);
+    }));
+  Object.keys(S.we.data).forEach(d => { S.we.data[d] = strip(S.we.data[d]); });
+  save(); renderAll();
+}
+
+function renderBalance(){
+  const wrap = $("#balance-wrap");
+  wrap.textContent = "";
+  const rows = S.people.map(p => ({ p, c: countsFor(p.id) }));
+  const max = Math.max(1, ...rows.map(r => r.c.total));
+  const avg = rows.length ? rows.reduce((n,r) => n + r.c.total, 0) / rows.length : 0;
+
+  const table = el("table");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["Person","KPI","Walkthrough","Weekend","Total","Share"].forEach(h => hr.appendChild(el("th",null,h)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  rows.forEach(r => {
+    const tr = el("tr");
+    const tdn = el("td", null, r.p.name + (r.p.active ? "" : " (off)"));
+    tdn.style.fontWeight = "700";
+    if(!r.p.active) tdn.style.color = "var(--muted)";
+    tr.appendChild(tdn);
+    [r.c.kpi, r.c.wt, r.c.we, r.c.total].forEach(v => {
+      const td = el("td","num", String(v));
+      tr.appendChild(td);
+    });
+    const tdb = el("td");
+    const dev = r.c.total - avg;
+    const bar = el("div","bar" + (dev > 1.0 ? " -hi" : dev < -1.0 ? " -lo" : ""));
+    const fill = el("span");
+    fill.style.width = Math.round(r.c.total / max * 100) + "%";
+    bar.appendChild(fill);
+    bar.title = r.c.total + " duties · team average " + avg.toFixed(1);
+    tdb.appendChild(bar);
+    tr.appendChild(tdb);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
+function renderPersonPicker(){
+  const sel = $("#in-person");
+  const keep = sel.value;
+  sel.textContent = "";
+  S.people.forEach(p => {
+    const o = el("option", null, p.name);
+    o.value = p.id;
+    sel.appendChild(o);
+  });
+  if(S.people.some(p => p.id === keep)) sel.value = keep;
+  else if(S.people[0]) sel.value = S.people[0].id;
+}
+
+function renderPerson(){
+  const id = $("#in-person").value;
+  const wrap = $("#person-wrap");
+  const stats = $("#person-stats");
+  wrap.textContent = "";
+  stats.textContent = "";
+  if(!id) return;
+
+  const c = countsFor(id);
+  [["KPI duties", c.kpi], ["Walkthroughs", c.wt], ["Weekends", c.we], ["Total", c.total]].forEach(pair => {
+    const s = el("div","stat");
+    s.appendChild(el("div","k", pair[0]));
+    s.appendChild(el("div","v", String(pair[1])));
+    stats.appendChild(s);
+  });
+
+  const duties = dutiesFor(id);
+  if(!duties.length){
+    wrap.appendChild(el("div","notice","Nothing assigned in this window yet. Use Fill schedule to build the rota."));
+    return;
+  }
+
+  const byWeek = new Map();
+  duties.forEach(d => {
+    if(!byWeek.has(d.wk)) byWeek.set(d.wk, { mon:d.mon, items:[] });
+    byWeek.get(d.wk).items.push(d);
+  });
+
+  byWeek.forEach((grp, wk) => {
+    const box = el("div","person-week");
+    const head = el("header");
+    head.appendChild(el("span","wk", wk));
+    head.appendChild(el("span","rng",
+      fmtDate(grp.mon) + " – " + fmtDate(addDays(grp.mon,6))));
+    box.appendChild(head);
+
+    const ul = el("ul");
+    grp.items.forEach(d => {
+      const li = el("li");
+      if(d.area) li.appendChild(el("span","rowmark -"+d.area.toLowerCase(), d.area));
+      li.appendChild(el("span","what", d.what));
+      li.appendChild(el("span","meta", d.when || d.kind));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    wrap.appendChild(box);
+  });
+}
+
+function personText(id){
+  const lines = [nameOf(id) + " — duty list"];
+  const byWeek = new Map();
+  dutiesFor(id).forEach(d => {
+    if(!byWeek.has(d.wk)) byWeek.set(d.wk, { mon:d.mon, items:[] });
+    byWeek.get(d.wk).items.push(d);
+  });
+  if(!byWeek.size) return lines[0] + "\nNothing assigned.";
+  byWeek.forEach((grp, wk) => {
+    lines.push("");
+    lines.push(wk + "  (" + fmtDate(grp.mon) + " – " + fmtDate(addDays(grp.mon,6)) + ")");
+    grp.items.forEach(d => {
+      lines.push("  - " + d.what + (d.area ? " — " + d.area : "") + (d.when ? " — " + d.when : ""));
+    });
+  });
+  return lines.join("\n");
+}
+
+/* ══════════════════════════════════════════════════════════
+   Targets editor
+   ══════════════════════════════════════════════════════════ */
+function renderTargets(){
+  const tbody = $("#tbl-targets tbody");
+  tbody.textContent = "";
+  S.tasks.forEach((task, i) => {
+    const tr = el("tr");
+
+    const tdk = el("td");
+    const ik = el("input");
+    ik.type = "text";
+    ik.value = task.key;
+    ik.size = 8;
+    ik.style.width = "80px";
+    ik.setAttribute("aria-label","Task code");
+    ik.addEventListener("change", () => {
+      const old = task.key;
+      const next = ik.value.trim().toUpperCase() || old;
+      if(next === old) return;
+      Object.keys(S.kpi.data).forEach(wk => {
+        const w = S.kpi.data[wk];
+        if(w && w[old]){ w[next] = w[old]; delete w[old]; }
+      });
+      Object.keys(S.kpi.locked).forEach(k => {
+        const parts = k.split("|");
+        if(parts[1] === old){
+          S.kpi.locked[parts[0]+"|"+next+"|"+parts[2]] = true;
+          delete S.kpi.locked[k];
+        }
+      });
+      task.key = next;
+      save(); renderAll();
+    });
+    tdk.appendChild(ik);
+    tr.appendChild(tdk);
+
+    AREAS.forEach(area => {
+      const td = el("td");
+      const inp = el("input");
+      inp.type = "number";
+      inp.min = "0"; inp.max = "8"; inp.step = "1";
+      inp.value = task[area];
+      inp.style.width = "64px";
+      inp.setAttribute("aria-label", task.key + " " + area + " target");
+      inp.addEventListener("change", () => {
+        task[area] = Math.max(0, parseInt(inp.value,10) || 0);
+        save(); renderTargets(); renderKPI();
+      });
+      td.appendChild(inp);
+      tr.appendChild(td);
+    });
+
+    tr.appendChild(el("td","num", String((Number(task.SHP)||0) + (Number(task.DCU)||0))));
+
+    const tdd = el("td");
+    const del = el("button","btn btn-sm btn-ghost","Remove");
+    del.addEventListener("click", () => {
+      S.tasks.splice(i,1);
+      save(); renderAll();
+    });
+    tdd.appendChild(del);
+    tr.appendChild(tdd);
+
+    tbody.appendChild(tr);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
+   CSV export
+   ══════════════════════════════════════════════════════════ */
+function csvCell(v){
+  const s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+function download(filename, text){
+  const blob = new Blob([text], { type:"text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function csvKPI(){
+  const weeks = mondays();
+  const rows = [];
+  const h1 = ["Team member","Area"];
+  weeks.forEach(mon => S.tasks.forEach(t => h1.push(weekLabelOf(mon) + " " + t.key)));
+  rows.push(h1);
+  S.people.forEach(p => {
+    AREAS.forEach(area => {
+      const r = [p.name, area];
+      weeks.forEach(mon => {
+        const wk = weekKeyOf(mon);
+        S.tasks.forEach(t => r.push(kpiOf(wk, t.key, area).includes(p.id) ? 1 : ""));
+      });
+      rows.push(r);
+    });
+  });
+  download("safety-kpi.csv", rows.map(r => r.map(csvCell).join(",")).join("\n"));
+}
+function csvWT(){
+  const rows = [["Week","Date","Area","People"]];
+  mondays().forEach(mon => {
+    AREAS.forEach(area => {
+      rows.push([weekLabelOf(mon), fmtDate(mon), area,
+        wtOf(toISO(mon), area).map(nameOf).join(" / ")]);
+    });
+  });
+  download("walkthrough.csv", rows.map(r => r.map(csvCell).join(",")).join("\n"));
+}
+function csvWE(){
+  const rows = [["Week","Saturday","On cover"]];
+  saturdays().forEach(sat => {
+    rows.push([weekLabelOf(sat), fmtDate(sat), weOf(toISO(sat)).map(nameOf).join(" / ")]);
+  });
+  download("weekend-coverage.csv", rows.map(r => r.map(csvCell).join(",")).join("\n"));
+}
+
+/* ══════════════════════════════════════════════════════════
+   Tabs
+   ══════════════════════════════════════════════════════════ */
+const TABS = [
+  { id:"kpi",    label:"Safety KPI" },
+  { id:"wt",     label:"Walkthrough" },
+  { id:"we",     label:"Weekend" },
+  { id:"person", label:"By person" },
+  { id:"team",   label:"Team" }
+];
+let activeTab = "kpi";
+
+function renderTabs(){
+  const bar = $("#tabs");
+  bar.textContent = "";
+  TABS.forEach(t => {
+    const b = el("button","tab", t.label);
+    b.type = "button";
+    b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", String(t.id === activeTab));
+    b.setAttribute("aria-controls","panel-"+t.id);
+    b.addEventListener("click", () => { activeTab = t.id; renderTabs(); });
+    bar.appendChild(b);
+  });
+  TABS.forEach(t => { $("#panel-"+t.id).hidden = (t.id !== activeTab); });
+}
+
+/* ══════════════════════════════════════════════════════════
+   Wire-up
+   ══════════════════════════════════════════════════════════ */
+function syncInputs(){
+  $("#in-start").value  = S.startISO;
+  $("#in-weeks").value  = S.weeks;
+  $("#in-wt-per").value = S.wtPerArea;
+  $("#in-we-per").value = S.wePerDate;
+
+  const list = mondays();
+  const perWeek = S.tasks.reduce((n,t) => n + (Number(t.SHP)||0) + (Number(t.DCU)||0), 0);
+  $("#window-summary").textContent = list.length
+    ? fmtDate(list[0]) + " to " + fmtDate(addDays(list[list.length-1],6)) +
+      " · " + S.weeks + " weeks · " + perWeek + " KPI slots a week"
+    : "";
+}
+
+function renderAll(){
+  syncInputs();
+  renderTargets();
+  renderKPI();
+  renderWT();
+  renderWE();
+  renderTeam();
+  renderBalance();
+  renderPersonPicker();
+  renderPerson();
+  renderBoard();
+}
+
+$("#btn-fill").addEventListener("click", () => { fillAll(); renderAll(); });
+$("#btn-print").addEventListener("click", () => window.print());
+$("#btn-theme").addEventListener("click", () => {
+  const root = document.documentElement;
+  const now = root.getAttribute("data-theme");
+  const dark = now
+    ? now === "dark"
+    : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", dark ? "light" : "dark");
+});
+
+$("#in-start").addEventListener("change", e => {
+  if(!e.target.value) return;
+  S.startISO = toISO(mondayOf(parseISO(e.target.value)));
+  save(); renderAll();
+});
+$("#in-weeks").addEventListener("change", e => {
+  S.weeks = Math.min(53, Math.max(1, parseInt(e.target.value,10) || 8));
+  save(); renderAll();
+});
+$("#in-wt-per").addEventListener("change", e => {
+  S.wtPerArea = Math.min(6, Math.max(1, parseInt(e.target.value,10) || 2));
+  save(); renderAll();
+});
+$("#in-we-per").addEventListener("change", e => {
+  S.wePerDate = Math.min(4, Math.max(1, parseInt(e.target.value,10) || 1));
+  save(); renderAll();
+});
+
+$("#btn-gen-kpi").addEventListener("click", () => { fillKPI(); renderAll(); });
+$("#btn-gen-wt").addEventListener("click",  () => { fillWT();  renderAll(); });
+$("#btn-gen-we").addEventListener("click",  () => { fillWE();  renderAll(); });
+
+$("#btn-clear-kpi").addEventListener("click", () => { S.kpi.locked = {}; save(); renderAll(); });
+$("#btn-clear-wt").addEventListener("click",  () => { S.wt.locked  = {}; save(); renderAll(); });
+$("#btn-clear-we").addEventListener("click",  () => { S.we.locked  = {}; save(); renderAll(); });
+
+$("#btn-csv-kpi").addEventListener("click", csvKPI);
+$("#btn-csv-wt").addEventListener("click",  csvWT);
+$("#btn-csv-we").addEventListener("click",  csvWE);
+
+$("#btn-add-task").addEventListener("click", () => {
+  S.tasks.push({ key:"NEW" + (S.tasks.length+1), SHP:1, DCU:1 });
+  save(); renderAll();
+});
+$("#btn-add-person").addEventListener("click", () => {
+  const name = prompt("Name of the new team member?");
+  if(!name || !name.trim()) return;
+  S.people.push({ id:newId(), name:name.trim(), active:true });
+  save(); renderAll();
+});
+
+$("#in-person").addEventListener("change", renderPerson);
+$("#btn-copy-person").addEventListener("click", () => {
+  const txt = personText($("#in-person").value);
+  const status = $("#copy-status");
+  const done = ok => {
+    status.textContent = ok ? "Copied." : "Could not copy — the text is in the Team tab backup box.";
+    setTimeout(() => { status.textContent = ""; }, 2500);
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(() => done(true), () => { $("#io").value = txt; done(false); });
+  } else {
+    $("#io").value = txt;
+    done(false);
+  }
+});
+
+$("#btn-dump").addEventListener("click", () => { $("#io").value = JSON.stringify(S, null, 2); });
+$("#btn-load").addEventListener("click", () => {
+  const txt = $("#io").value.trim();
+  if(!txt) return;
+  try{
+    const o = JSON.parse(txt);
+    if(!o || !Array.isArray(o.people)) throw new Error("no team in this backup");
+    S = Object.assign(defaultState(), o, {
+      kpi: Object.assign({data:{},locked:{}}, o.kpi),
+      wt:  Object.assign({data:{},locked:{}}, o.wt),
+      we:  Object.assign({data:{},locked:{}}, o.we)
+    });
+    let max = 0;
+    S.people.forEach(p => {
+      const n = parseInt(String(p.id).replace(/\D/g,""), 10);
+      if(n > max) max = n;
+    });
+    nextId = max + 1;
+    save(); renderAll();
+    alert("Backup loaded.");
+  }catch(err){
+    alert("That backup could not be read: " + err.message);
+  }
+});
+$("#btn-reset").addEventListener("click", () => {
+  if(!confirm("Start over with the default team and an empty rota? This cannot be undone.")) return;
+  S = defaultState();
+  save(); renderAll();
+});
+
+/* First run — build a rota so the page is never empty. */
+if(!storeRead()){
+  fillAll();
+}
+renderTabs();
+renderAll();
+</script>
+</body>
+</html>
