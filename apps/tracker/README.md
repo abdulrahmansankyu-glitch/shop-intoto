@@ -43,24 +43,38 @@ to that file and nothing else.
 - **Needs attention** — everything overdue or due inside a month, soonest first.
 - **Recent changes** — who changed what, and when.
 
-**The department as a landscape** — a bar per register on a floor you can turn:
-height is how much is still open, colour is the worst state anything on it is
-in. Drag to look around, click a column to open that register. The point is the
-shape rather than the figures — which register is tall, which is red — and the
-exact numbers are in the rings underneath.
+**The department as a landscape** — a column per register on a floor you can
+turn, stacked by state: closed at the base, then open, then due within the
+month, with the overdue work crowning it. Drag to look around, point at a column
+for its exact figures, click it to open that register.
 
 Drawn on a canvas with a hand-rolled projection rather than a 3D library: there
 is no build step, and it has to keep working inside the single-file offline
 build, where a CDN script would not be there. Three things in it are less
 obvious than they look:
 
-- **Shortest at the front.** In register order a tall column hides a short one
-  completely, and its name floats over the wrong neighbour. Sorting by height
-  means every register is visible from the resting view. The cost is that a
-  register moves when its counts change.
+- **Height follows the square root of the total.** Linearly, a register holding
+  eight hundred audits makes one holding six notices a smear on the floor — and
+  those six are the ones somebody has to act on. Within a column the bands stay
+  strictly proportional to each other.
+- **A band that exists is never invisible.** One overdue job among a hundred and
+  twenty-six is a hairline nobody sees, and that one job is the whole reason to
+  look; any band holding something gets a floor of a few percent, taken pro rata
+  from the bands with room to give. A band holding *nothing* stays absent — four
+  colours on a register that is only in one state would be a picture of
+  something untrue. The readout gives the real numbers.
+- **Shortest at the front, rows laid like brickwork.** On a square grid a back
+  column sits directly behind a front one and its lower bands — Closed first,
+  being at the base — disappear entirely. Sorting by size and offsetting
+  alternate rows by half a cell means every column shows through the gap between
+  the two in front of it.
+- **Faces are shaded against a fixed light**, so turning the floor changes them.
+  Tinting by which axis a face lay on is enough to read a box as solid but stays
+  put as the scene turns, which made the columns look like flat cut-outs
+  rotating.
 - **Name pills lift to clear each other**, with a hairline back to their column.
-  Empty registers sit together on the floor and their labels landed on top of
-  one another.
+  Short registers sit close together and their labels landed on top of one
+  another.
 - **The animation runs only while it is spinning.** A loop left running to poll
   a flag wakes the browser sixty times a second to decide to do nothing, which
   on a phone is battery spent on a still picture.
