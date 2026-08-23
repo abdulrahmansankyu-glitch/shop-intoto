@@ -291,9 +291,24 @@ document they forward to other people, and it should carry their columns rather
 than the app's bookkeeping, most of which restated a column already there.
 `Days To Due` is kept, being the one that answers something the sheet cannot.
 
-Overdue rows were tinted red and due-soon amber for the same reason and are now
-plain. The dashboard, the PDF report and the reminder emails all still say what
-is late.
+**Two cells carry colour, and only those two**: the priority — red for High and
+Critical, orange for Medium, nothing for Low or Planned — and the due date, red
+once it has passed. Whole rows were tinted once and the team asked for it gone,
+because on a document they forward it read as mark-up rather than information. A
+priority and a missed date are different: they are facts about that one cell,
+and they are what somebody scans the sheet for. Colouring every priority would
+leave nothing standing out, which is where the team started.
+
+The priority is coloured by the normalised value, so `P1`, `Critical` and `Alarm`
+all read the same on the page — but only when the sheet actually states one. An
+unset priority derives to Medium so the dashboard has something to sort by, and
+colouring from that painted empty cells orange, claiming a judgement nobody had
+made. Closed work is never marked late either: a job finished last month is not
+overdue, and marking it so is how a sheet ends up with a column of red nobody
+reads any more.
+
+**Everything is centred**, horizontally and vertically, as the team's own
+workbooks are.
 
 Exports **re-import cleanly** — download the master file, edit it offline, upload it
 back. All seven of those headers are still ignored on the way in, so a workbook
@@ -489,7 +504,7 @@ it uses that instead; the tables are created on boot.
 | `TRACKER_MAIL_FROM` · `TRACKER_GRAPH_*` · `TRACKER_SMTP_*` · `TRACKER_BREVO_API_KEY` · `TRACKER_RESEND_API_KEY` | — | Reminder email — see above |
 
 ```bash
-pnpm --filter @intoto/tracker test     # 80 tests, no database needed
+pnpm --filter @intoto/tracker test     # 81 tests, no database needed
 ```
 
 ---
@@ -595,7 +610,7 @@ src/report.js      the printable Engineering Department Updates sheet
 src/autonumber.js  the PA-YYMM-NN rule for Action Notice document numbers
 src/reminders.js   who is reminded about what, and the digest they receive
 src/mailer.js      Microsoft Graph, SMTP, Brevo or Resend behind one send()
-test/              80 tests over the parts that would fail silently
+test/              81 tests over the parts that would fail silently
 ```
 
 The browser never carries its own copy of the register definitions — it reads them

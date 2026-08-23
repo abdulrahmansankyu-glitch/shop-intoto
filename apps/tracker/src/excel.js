@@ -395,6 +395,27 @@ const HEADER_FONT = { bold: true, color: { argb: 'FF000000' }, size: 11 };
  */
 const DATE_FORMAT = 'mm/dd/yyyy';
 
+/**
+ * The two cells the team colours by hand, now coloured on the way out.
+ *
+ * Deliberately narrow. Whole rows were tinted once and the team asked for it
+ * gone, because on a document they forward it read as mark-up rather than as
+ * information. A priority and a missed date are different: they are facts about
+ * that one cell, and they are what somebody scans the sheet for.
+ *
+ * Low and Planned carry no fill at all — colouring every priority would leave
+ * nothing standing out, which is the state the team was already in.
+ */
+const PRIORITY_FILLS = {
+  Critical: { argb: 'FFC00000', text: 'FFFFFFFF' },
+  High: { argb: 'FFFF0000', text: 'FFFFFFFF' },
+  Medium: { argb: 'FFE36C0A', text: 'FF000000' },
+};
+
+const OVERDUE_FILL = { argb: 'FFFF0000', text: 'FFFFFFFF' };
+
+const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+
 const THIN = { style: 'thin', color: { argb: 'FFB7BEC8' } };
 const CELL_BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
 
@@ -665,6 +686,16 @@ function writeRegisterSheet(workbook, register, records, logoIds) {
     register.fields.map((f, i) => (f.type === 'date' ? i + 2 : 0)).filter(Boolean),
   );
 
+  // +2 for the serial column and for one-based indexing. Zero means the
+  // register has no such column, which is a real case — QC has no priority of
+  // its own beyond the finding classification.
+  const columnOf = (key) => {
+    const index = register.fields.findIndex((f) => f.key === key);
+    return index < 0 ? 0 : index + 2;
+  };
+  const priorityColumn = register.roles.priority ? columnOf(register.roles.priority) : 0;
+  const dueColumn = register.roles.due ? columnOf(register.roles.due) : 0;
+
   records.forEach((record, i) => {
     const values = [
       i + 1,
@@ -687,7 +718,10 @@ function writeRegisterSheet(workbook, register, records, logoIds) {
       ...COMPUTED_COLUMNS.map((c) => c.value(record)),
     ];
     const row = sheet.addRow(values);
-    row.alignment = { vertical: 'top', wrapText: true };
+    // Centred, as the team's own workbooks are. `middle` with it, because
+    // centred text sitting at the top of a three-line wrapped row looks like a
+    // mistake rather than a choice.
+    row.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
     // Applied per cell rather than per column: the cells holding a phrase must
     // stay text, and a date format on them would show nothing at all.
@@ -696,16 +730,36 @@ function writeRegisterSheet(workbook, register, records, logoIds) {
       if (cell.value instanceof Date) cell.numFmt = DATE_FORMAT;
     }
 
-    // Rows are left unfilled on purpose.
-    //
-    // Overdue rows used to be tinted red and due-soon amber, so the state was
-    // visible in Excel as well as in the app. The team asked for it gone: the
-    // export is a document they forward, and the colours read as a mark-up on
-    // their sheet rather than as information. The dashboard, the PDF report and
-    // the reminder emails all still say what is late.
     row.eachCell((cell) => {
       cell.border = CELL_BORDER;
     });
+
+    // The priority cell, coloured by the normalised value rather than by the
+    // word in the sheet — so `P1` and `Critical` and `Alarm` all read the same
+    // on the page, which is the whole reason those vocabularies were folded
+    // onto one ladder.
+    if (priorityColumn) {
+      // Only when the sheet actually says one. An unset priority derives to
+      // Medium so the dashboard has something to sort by, and colouring from
+      // that painted empty cells orange — the sheet would have been claiming a
+      // judgement nobody had made.
+      const stated = String(record.data?.[register.roles.priority] ?? '').trim();
+      const fill = stated ? PRIORITY_FILLS[record.priority] : null;
+      if (fill) {
+        const cell = row.getCell(priorityColumn);
+        cell.fill = solid(fill.argb);
+        cell.font = { bold: true, color: { argb: fill.text } };
+      }
+    }
+
+    // The due date, red once it has passed. Closed work is left alone: a job
+    // finished last month is not late, and marking it so is how a sheet ends up
+    // with a column of red nobody reads any more.
+    if (dueColumn && dueState(record.dueDate, record.status) === 'overdue') {
+      const cell = row.getCell(dueColumn);
+      cell.fill = solid(OVERDUE_FILL.argb);
+      cell.font = { bold: true, color: { argb: OVERDUE_FILL.text } };
+    }
   });
 
   if (records.length) {

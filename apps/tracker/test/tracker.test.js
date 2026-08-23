@@ -2066,3 +2066,50 @@ test('an exported sheet is headed like a document, not like a tooltip', async ()
   // A register may still name its own heading if the default does not suit.
   assert.equal(exportTitle({ name: 'IWS', exportTitle: 'SHP IWS Tracking' }), 'SHP IWS Tracking');
 });
+
+test('an export colours the priority and a missed date, and nothing else', async () => {
+  const register = getRegister('action-notice');
+  const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  const records = [
+    deriveAll(register, { documentNo: 'A', priority: 'High', etc: day(-9) }),
+    deriveAll(register, { documentNo: 'B', priority: 'Medium', etc: day(9) }),
+    deriveAll(register, { documentNo: 'C', priority: 'Critical', etc: 'Next Shutdown' }),
+    deriveAll(register, { documentNo: 'D', priority: 'Low', etc: day(40) }),
+    // No priority stated at all, and already finished.
+    deriveAll(register, { documentNo: 'E', etc: day(-30), status: 'Completed' }),
+  ];
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildWorkbook([{ register, records }]));
+  const sheet = workbook.worksheets[0];
+
+  const column = {};
+  sheet.getRow(2).eachCell((cell, i) => {
+    column[String(cell.value)] = i;
+  });
+  const fillOf = (row, name) => sheet.getRow(row).getCell(column[name]).fill?.fgColor?.argb ?? null;
+
+  assert.equal(fillOf(3, 'Priority'), 'FFFF0000', 'High is red');
+  assert.equal(fillOf(4, 'Priority'), 'FFE36C0A', 'Medium is orange');
+  assert.equal(fillOf(5, 'Priority'), 'FFC00000', 'Critical is a deeper red');
+  assert.equal(fillOf(6, 'Priority'), null, 'Low carries no fill — colouring everything highlights nothing');
+
+  // An unset priority derives to Medium so the dashboard can sort by it.
+  // Colouring from that painted empty cells orange, claiming a judgement
+  // nobody had made.
+  assert.equal(String(sheet.getRow(7).getCell(column.Priority).value ?? ''), '');
+  assert.equal(fillOf(7, 'Priority'), null, 'a blank priority cell stays blank');
+
+  assert.equal(fillOf(3, 'ETC'), 'FFFF0000', 'a date that has passed is red');
+  assert.equal(fillOf(4, 'ETC'), null, 'one still to come is not');
+  assert.equal(fillOf(5, 'ETC'), null, '"Next Shutdown" is a note, not a missed date');
+  // Work finished last month is not late. Marking it so is how a sheet ends up
+  // with a column of red nobody reads any more.
+  assert.equal(fillOf(7, 'ETC'), null, 'closed work is left alone');
+
+  // Everything centred, as the team's own workbooks are.
+  for (const name of ['Description', 'Location / Tag', 'Status']) {
+    assert.equal(sheet.getRow(3).getCell(column[name]).alignment.horizontal, 'center', name);
+  }
+  assert.equal(sheet.getRow(3).getCell(column.Description).alignment.vertical, 'middle');
+});
