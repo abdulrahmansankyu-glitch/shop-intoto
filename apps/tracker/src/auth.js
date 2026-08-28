@@ -150,12 +150,19 @@ export function verifyToken(token, secret, purpose = 'session') {
 
 export const normaliseEmail = (email) => String(email ?? '').trim().toLowerCase();
 
-/** Build a user row. Never returns the password in a shape that can leak. */
-export function buildUser({ name, email, password, role = 'viewer', registers = [] }) {
+/**
+ * Build a user row. Never returns the password in a shape that can leak.
+ *
+ * `phone` arrives already in E.164 — the caller normalises it, because turning
+ * `055 123 4567` into `966551234567` needs to know which country to assume and
+ * that is a deployment's decision, not this module's.
+ */
+export function buildUser({ name, email, phone = null, password, role = 'viewer', registers = [] }) {
   return {
     id: randomUUID(),
     name: String(name ?? '').trim().slice(0, 80),
     email: normaliseEmail(email),
+    phone: phone || null,
     password_hash: hashPassword(password),
     role: ROLES.includes(role) ? role : 'viewer',
     registers,
@@ -172,6 +179,7 @@ export function toUserApi(row) {
     id: row.id,
     name: row.name,
     email: row.email,
+    phone: row.phone ?? null,
     role: row.role,
     registers: row.registers ?? [],
     active: row.active !== false,

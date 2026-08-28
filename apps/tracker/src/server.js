@@ -46,7 +46,11 @@ import {
   bandsSendingOn,
   normaliseConfig,
   planRun,
+  planWhatsappRun,
+  whatsappConfigOf,
 } from './reminders.js';
+import { createWhatsapp } from './whatsapp.js';
+import { normalisePhone } from './phone.js';
 import { sanitiseData, summarise } from './query.js';
 import {
   calendarOf,
@@ -122,6 +126,7 @@ export async function createApp(env = process.env, overrides = {}) {
   // without an SMTP server, and without a "pretend to send" branch inside the
   // route that production would then be running a variant of.
   const mailer = overrides.mailer ?? createMailer(env);
+  const whatsapp = overrides.whatsapp ?? createWhatsapp(env);
   const app = express();
 
   /**
@@ -290,9 +295,11 @@ export async function createApp(env = process.env, overrides = {}) {
         'settings-password-confirm',
         'pdf-report',
         'email-reminders',
+        'whatsapp-reminders',
       ],
       accounts: await store.countUsers(),
       mail: mailer.provider,
+      whatsapp: whatsapp.provider,
     });
   });
 
@@ -455,10 +462,17 @@ export async function createApp(env = process.env, overrides = {}) {
       const problem = passwordProblem(req.body?.password);
       if (problem) return asError(res, 400, problem);
 
+      // A number that cannot be dialled is stored as none at all, so the team
+      // list says "no WhatsApp number" rather than showing a broken link.
+      if (req.body?.phone && !normalisePhone(req.body.phone, whatsapp.country)) {
+        return asError(res, 400, 'That does not look like a mobile number. Use 05x xxx xxxx or +966 5x xxx xxxx.');
+      }
+
       const user = await store.insertUser(
         buildUser({
           name: req.body?.name,
           email,
+          phone: normalisePhone(req.body?.phone, whatsapp.country),
           password: req.body.password,
           role: req.body?.role,
           registers: sanitiseRegisters(req.body?.registers),
@@ -489,6 +503,15 @@ export async function createApp(env = process.env, overrides = {}) {
 
       const patch = {};
       if (typeof req.body?.name === 'string') patch.name = req.body.name.trim().slice(0, 80);
+      if (typeof req.body?.phone === 'string') {
+        const trimmed = req.body.phone.trim();
+        const phone = normalisePhone(trimmed, whatsapp.country);
+        // An empty box clears the number; anything else has to be dialable.
+        if (trimmed && !phone) {
+          return asError(res, 400, 'That does not look like a mobile number. Use 05x xxx xxxx or +966 5x xxx xxxx.');
+        }
+        patch.phone = phone;
+      }
       if (ROLES.includes(req.body?.role)) patch.role = req.body.role;
       if (Array.isArray(req.body?.registers)) patch.registers = sanitiseRegisters(req.body.registers);
       if (typeof req.body?.active === 'boolean') patch.active = req.body.active;
@@ -1096,6 +1119,32 @@ export async function createApp(env = process.env, overrides = {}) {
       today,
     });
 
+  /**
+   * The same, for WhatsApp — and with the click-to-send link attached.
+   *
+   * The link is added here rather than inside `planWhatsappRun` because it is
+   * the transport's business: `wa.me` is how *WhatsApp* addresses a chat, and
+   * the rules module has no opinion about that. It is also what makes the free
+   * mode work — every message carries a link whether or not a paid transport is
+   * configured, so the Settings panel always has something to offer.
+   */
+  const buildWhatsappPlan = async (config, today) => {
+    const plan = planWhatsappRun({
+      records: await store.all(null),
+      users: (await store.listUsers()).map(toUserApi),
+      config,
+      today,
+      country: whatsapp.country,
+    });
+    return {
+      ...plan,
+      messages: plan.messages.map((message) => ({
+        ...message,
+        link: whatsapp.link(message.to, message.text),
+      })),
+    };
+  };
+
   /** Config, plus the transport's state — never its credentials. */
   app.get('/api/reminders', requireAccess('manage'), async (_req, res, next) => {
     try {
@@ -1111,6 +1160,16 @@ export async function createApp(env = process.env, overrides = {}) {
           from: mailer.from || null,
           problem: mailer.problem,
         },
+        whatsapp: {
+          provider: whatsapp.provider,
+          // False in the free `link` mode, and that is the honest answer:
+          // nothing goes out unattended, somebody taps send.
+          configured: whatsapp.configured,
+          country: whatsapp.country,
+          templated: whatsapp.templated,
+          problem: whatsapp.problem,
+          bandsToday: bandsSendingOn(whatsappConfigOf(config)),
+        },
         scheduleConfigured: Boolean(reminderSecret),
         runs: await loadRuns(),
       });
@@ -1121,7 +1180,16 @@ export async function createApp(env = process.env, overrides = {}) {
 
   app.put('/api/reminders', requireAccess('manage'), async (req, res, next) => {
     try {
-      const config = normaliseConfig({ ...(await loadReminderConfig()), ...(req.body ?? {}) });
+      const current = await loadReminderConfig();
+      const body = req.body ?? {};
+      const config = normaliseConfig({
+        ...current,
+        ...body,
+        // Merged a level deeper than the rest: the panel sends only the WhatsApp
+        // field it changed, and a shallow spread would reset the others to their
+        // defaults every time somebody moved one slider.
+        whatsapp: { ...current.whatsapp, ...(body.whatsapp ?? {}) },
+      });
       await store.setSetting('reminder_config', JSON.stringify(config));
       await store.logActivity({
         id: randomUUID(),
@@ -1130,10 +1198,18 @@ export async function createApp(env = process.env, overrides = {}) {
         action: 'reminders',
         register: null,
         recordId: null,
-        summary: config.enabled ? 'Turned daily reminders on' : 'Turned daily reminders off',
+        summary: (() => {
+          const on = [config.enabled ? 'email' : null, config.whatsapp.enabled ? 'WhatsApp' : null].filter(Boolean);
+          return on.length ? `Reminders on for ${on.join(' and ')}` : 'Turned reminders off';
+        })(),
         detail: config,
       });
-      res.json({ ok: true, config, bandsToday: bandsSendingOn(config) });
+      res.json({
+        ok: true,
+        config,
+        bandsToday: bandsSendingOn(config),
+        whatsappBandsToday: bandsSendingOn(whatsappConfigOf(config)),
+      });
     } catch (error) {
       next(error);
     }
@@ -1210,6 +1286,101 @@ export async function createApp(env = process.env, overrides = {}) {
   });
 
   /**
+   * Today's WhatsApp messages, each with the link that sends it.
+   *
+   * This *is* the free mode, not a preview of it. With no paid WhatsApp account
+   * the panel lists one line per team member with a **Send on WhatsApp** button;
+   * tapping it opens that person's chat with the message already written, and
+   * the admin presses send. One tap each, no approval, no cost.
+   *
+   * `?force=1` builds the messages even for people with nothing due, because on
+   * a quiet day "no messages" and "it is broken" look identical otherwise.
+   */
+  app.get('/api/reminders/whatsapp', requireAccess('manage'), async (req, res, next) => {
+    try {
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date ?? ''))
+        ? String(req.query.date)
+        : undefined;
+      const stored = await loadReminderConfig();
+      const config = req.query.force
+        ? { ...stored, whatsapp: { ...stored.whatsapp, sendWhenEmpty: true } }
+        : stored;
+
+      const plan = await buildWhatsappPlan(config, date);
+      const users = (await store.listUsers()).map(toUserApi);
+
+      res.json({
+        date: plan.date,
+        weekday: plan.weekday,
+        bands: plan.bands,
+        recipients: plan.recipients,
+        skipped: plan.skipped,
+        // Named so the panel can say *why* a person is missing: an account with
+        // no number never appears in the plan at all, and silently leaving them
+        // out is how somebody goes a month without a reminder.
+        withoutNumber: users
+          .filter((u) => u.active !== false && !normalisePhone(u.phone, whatsapp.country))
+          .map((u) => ({ name: u.name, email: u.email })),
+        messages: plan.messages.map(({ to, name, counts, text, link }) => ({
+          to,
+          name,
+          counts,
+          text,
+          link,
+        })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * Send the WhatsApp messages without anybody tapping.
+   *
+   * Only possible with a paid transport configured; in the free mode it answers
+   * with the reason and the panel falls back to the links, which is the whole
+   * point of keeping `configured` honest rather than pretending.
+   */
+  app.post('/api/reminders/whatsapp/run', requireAccess('manage'), async (req, res, next) => {
+    try {
+      if (!whatsapp.configured) return asError(res, 400, whatsapp.problem);
+
+      const stored = await loadReminderConfig();
+      const config = req.body?.force
+        ? { ...stored, whatsapp: { ...stored.whatsapp, sendWhenEmpty: true } }
+        : stored;
+      const plan = await buildWhatsappPlan(config);
+
+      let result;
+      try {
+        result = await whatsapp.sendAll(plan.messages);
+      } catch (failure) {
+        // Same reasoning as the mail test: Meta's refusal is the entire result
+        // of pressing this button, and the generic handler would replace it
+        // with "Something went wrong on the server".
+        return asError(res, 502, String(failure?.message ?? failure));
+      }
+
+      await store.logActivity({
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        actor: actorOf(req),
+        action: 'reminders',
+        register: null,
+        recordId: null,
+        summary: `Sent ${result.sent.length} WhatsApp reminder${result.sent.length === 1 ? '' : 's'}${
+          result.failed.length ? `, ${result.failed.length} failed` : ''
+        }`,
+        detail: { date: plan.date, ...result },
+      });
+
+      res.json({ ok: true, date: plan.date, sent: result.sent.length, failed: result.failed });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
    * Send today's reminders.
    *
    * Called by the scheduler with the shared secret, or by an admin from
@@ -1236,18 +1407,32 @@ export async function createApp(env = process.env, overrides = {}) {
       }
 
       const config = await loadReminderConfig();
-      if (!config.enabled && !req.body?.force) {
+      const force = Boolean(req.body?.force);
+      const doEmail = config.enabled || force;
+      // WhatsApp only joins a scheduled run when a paid transport can send it
+      // unattended. In the free link mode there is nobody here to tap anything,
+      // so it stays out of the run rather than failing it.
+      const doWhatsapp = (config.whatsapp.enabled || force) && whatsapp.configured;
+
+      if (!doEmail && !doWhatsapp) {
         return res.json({ ok: true, skipped: 'reminders are switched off', sent: 0 });
       }
-      if (!mailer.configured) return asError(res, 400, mailer.problem);
+      if (doEmail && !mailer.configured) return asError(res, 400, mailer.problem);
 
       const plan = await buildPlan(config);
       const runs = await loadRuns();
-      if (!req.body?.force && runs.some((r) => r.date === plan.date && r.sent > 0)) {
+      if (!force && runs.some((r) => r.date === plan.date && (r.sent > 0 || r.whatsappSent > 0))) {
         return res.json({ ok: true, skipped: 'already sent today', date: plan.date, sent: 0 });
       }
 
-      const { sent, failed } = await mailer.sendAll(plan.messages);
+      const { sent, failed } = doEmail
+        ? await mailer.sendAll(plan.messages)
+        : { sent: [], failed: [] };
+
+      const chat = doWhatsapp
+        ? await whatsapp.sendAll((await buildWhatsappPlan(config)).messages)
+        : { sent: [], failed: [] };
+
       const entry = {
         at: new Date().toISOString(),
         date: plan.date,
@@ -1258,6 +1443,9 @@ export async function createApp(env = process.env, overrides = {}) {
         failed: failed.length,
         recipients: sent,
         errors: failed.slice(0, 5),
+        whatsappSent: chat.sent.length,
+        whatsappFailed: chat.failed.length,
+        whatsappErrors: chat.failed.slice(0, 5),
       };
       await recordRun(entry);
       await store.logActivity({
@@ -1267,9 +1455,18 @@ export async function createApp(env = process.env, overrides = {}) {
         action: 'reminders',
         register: null,
         recordId: null,
-        summary: `Sent ${sent.length} reminder email${sent.length === 1 ? '' : 's'}${
-          failed.length ? `, ${failed.length} failed` : ''
-        }`,
+        summary: [
+          `Sent ${sent.length} reminder email${sent.length === 1 ? '' : 's'}${
+            failed.length ? `, ${failed.length} failed` : ''
+          }`,
+          chat.sent.length || chat.failed.length
+            ? `${chat.sent.length} WhatsApp message${chat.sent.length === 1 ? '' : 's'}${
+                chat.failed.length ? `, ${chat.failed.length} failed` : ''
+              }`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' and '),
         detail: entry,
       });
 
@@ -1490,7 +1687,7 @@ export async function createApp(env = process.env, overrides = {}) {
     res.status(500).json({ error: 'Something went wrong on the server.' });
   });
 
-  return { app, store, mailer };
+  return { app, store, mailer, whatsapp };
 }
 
 // Started directly (not imported by a test), so `node src/server.js` just works.

@@ -486,6 +486,80 @@ reminders either — there is nobody to remind and nothing running to do it.
 
 ---
 
+## WhatsApp reminders
+
+**Settings → WhatsApp reminders**, and one thing has to be said before anything
+else: **WhatsApp has no free way for a program to message people on its own.**
+
+Meta charges for every message a business starts, and a message a business starts
+must use a template approved in advance. There is no free tier a plant tracker
+can sit on. The libraries that drive WhatsApp Web get the number banned, and the
+number would be somebody's personal phone. So there are two modes, and the free
+one is the default.
+
+### Free mode — one tap per person
+
+The app writes each person's message and gives you a `wa.me` link. Tapping it
+opens that person's chat with the reminder already written; you press send.
+
+Press **Prepare today's messages** and the panel lists one row per team member
+with their counts and a **Send on WhatsApp** button. **Copy** puts the same text
+on the clipboard, for a desktop with no WhatsApp installed or for pasting into a
+group chat. Accounts with no number on file are named underneath rather than
+silently skipped — that is how somebody goes a month without a reminder and
+nobody notices.
+
+No account, no approval, no cost, and nothing that can get a number banned,
+because the message is sent by a person from their own WhatsApp.
+
+### The bands are the team's, and they are not the email's
+
+A month's warning, then a message every day once **a week** remains — tighter
+than the email's fifteen days, and deliberately a separate setting. An email is
+read when it is opened; a WhatsApp message interrupts, and a channel that
+interrupts every morning about something three weeks away is a channel that gets
+muted.
+
+The message itself is shorter than the digest for the same reason: the reader's
+own jobs in full, everybody else's urgent ones summarised, twelve rows at most.
+It is read on a lock screen. The counts stay truthful however many rows are
+shown, and the rest are one tap away in the app.
+
+### Numbers
+
+Each account holds one, in **Settings → Your team**. Type it however you like —
+`0551234567`, `+966 55 123 4567`, `00966-55-123-4567` — and it is stored one way.
+A leading zero is the national trunk code and is replaced with the country code
+from `TRACKER_WHATSAPP_COUNTRY` (`966`, Saudi Arabia). A number that could not be
+real is refused at the point of typing rather than stored broken.
+
+There is no equivalent of the email's "also send to" list. An address typed into
+a settings box reaches a mailbox somebody published; a phone number reaches a
+person's private phone, and the only numbers this app holds are the ones its own
+team members put on their own accounts.
+
+### Sending it unattended, if the company ever pays for it
+
+Set `TRACKER_WHATSAPP_TOKEN` and `TRACKER_WHATSAPP_PHONE_ID` from a Meta app
+registration and the same messages go out with the emails on the daily run. Also
+set `TRACKER_WHATSAPP_TEMPLATE` to an approved template's name: without it the
+app sends plain text, which WhatsApp only accepts within 24 hours of that person
+messaging your number — and a 5am reminder is always outside that window. The
+template needs four body parameters, in this order: name, overdue count, due-soon
+count, days. (Template parameters cannot contain newlines, which is why the list
+itself stays in the app.)
+
+Twilio works too — `TRACKER_TWILIO_SID`, `TRACKER_TWILIO_TOKEN`,
+`TRACKER_TWILIO_FROM` — and its sandbox number is the easiest way to prove the
+plumbing. Each person opts in by messaging it once, and that opt-in lapses after
+72 hours, so it is for testing rather than for running a department on.
+
+Meta's refusals are numbered rather than explained, so the app translates the
+ones that matter — `131047` is the 24-hour window, `132001` a template that is
+missing or still Pending — and keeps their own words alongside.
+
+---
+
 ## Running it
 
 ```bash
@@ -509,9 +583,12 @@ it uses that instead; the tables are created on boot.
 | `TZ` | host default | The plant's timezone, so "due today" means today locally |
 | `TRACKER_REMINDER_SECRET` | — | Lets the scheduler trigger a reminder run. Unset → no schedule |
 | `TRACKER_MAIL_FROM` · `TRACKER_GRAPH_*` · `TRACKER_SMTP_*` · `TRACKER_BREVO_API_KEY` · `TRACKER_RESEND_API_KEY` | — | Reminder email — see above |
+| `TRACKER_WHATSAPP_COUNTRY` | `966` | Country code assumed for a number typed the local way |
+| `TRACKER_WHATSAPP_TOKEN` · `TRACKER_WHATSAPP_PHONE_ID` · `TRACKER_WHATSAPP_TEMPLATE` | — | Send WhatsApp unattended through Meta. Unset → free link mode |
+| `TRACKER_TWILIO_SID` · `TRACKER_TWILIO_TOKEN` · `TRACKER_TWILIO_FROM` | — | Send WhatsApp unattended through Twilio |
 
 ```bash
-pnpm --filter @intoto/tracker test     # 82 tests, no database needed
+pnpm --filter @intoto/tracker test     # 92 tests, no database needed
 ```
 
 ---
@@ -616,6 +693,8 @@ src/auth.js        passwords, sessions, roles and register permissions
 src/report.js      the printable Engineering Department Updates sheet
 src/autonumber.js  the PA-YYMM-NN rule for Action Notice document numbers
 src/reminders.js   who is reminded about what, and the digest they receive
+src/whatsapp.js    the WhatsApp channel: free click-to-send links, or a paid API
+src/phone.js       one phone number however it was typed
 src/mailer.js      Microsoft Graph, SMTP, Brevo or Resend behind one send()
 test/              82 tests over the parts that would fail silently
 ```

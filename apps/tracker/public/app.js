@@ -104,6 +104,7 @@ const state = {
   reminders: null, // { config, mail, runs, weekdays } for admins
   reminderPreview: null, // who today's digest would go to, before sending
   reminderTest: null, // { ok, message } from the last test send — kept on screen
+  whatsappPlan: null, // today's WhatsApp messages and their click-to-send links
   theme: localStorage.getItem('tracker.theme') ?? 'auto',
   gate: null, // 'setup' | 'login' | 'name' | null
   dashboard: null,
@@ -3222,6 +3223,345 @@ function renderReminders() {
   );
 }
 
+const WHATSAPP_PROVIDER_LABELS = {
+  link: 'Free links — you tap send',
+  cloud: 'WhatsApp Business (Meta)',
+  twilio: 'Twilio',
+};
+
+/**
+ * WhatsApp reminders.
+ *
+ * **Why this panel has buttons instead of just a switch.** WhatsApp has no free
+ * way for a program to message people by itself: Meta charges for every message
+ * a business starts, and one it starts has to use a template approved in
+ * advance. There is no free tier to sit on, and the libraries that drive
+ * WhatsApp Web get the number banned — and the number would be somebody's own
+ * phone.
+ *
+ * So the free mode writes the messages and hands back one link per person.
+ * Tapping a link opens that person's chat with the reminder already written; you
+ * press send. One tap each, no cost, nothing to be approved and nothing to be
+ * banned for. If the company ever gets a WhatsApp Business number, setting the
+ * environment variables turns the same messages into an unattended send and this
+ * panel grows a "Send all now" button — nothing else changes.
+ *
+ * Email is still the channel that goes out on its own. That is why both exist.
+ */
+function renderWhatsappReminders() {
+  const data = state.reminders;
+  if (!data?.whatsapp) return null;
+
+  const config = data.config.whatsapp ?? {};
+  const auto = data.whatsapp.configured;
+
+  const save = async (patch, message) => {
+    try {
+      const result = await api('/api/reminders', { method: 'PUT', json: { whatsapp: patch } });
+      state.reminders = { ...data, config: result.config };
+      // The messages on screen were written against the old thresholds, so they
+      // are no longer what would be sent. Dropping them is more honest than
+      // leaving links that quietly disagree with the settings above them.
+      state.whatsappPlan = null;
+      if (message) toast(message);
+      render();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  const number = (label, key, hint, min, max) =>
+    h(
+      'label',
+      { class: 'field' },
+      h('span', null, label),
+      h('input', {
+        type: 'number',
+        min: String(min),
+        max: String(max),
+        value: String(config[key]),
+        title: hint,
+        onchange: (e) => save({ [key]: Number(e.target.value) }),
+      }),
+    );
+
+  const check = (key, label, hint) =>
+    h(
+      'label',
+      { style: 'display: flex; gap: 9px; align-items: flex-start; cursor: pointer' },
+      h('input', {
+        type: 'checkbox',
+        checked: config[key] ? 'checked' : null,
+        style: 'margin-top: 3px',
+        onchange: (e) => save({ [key]: e.target.checked }),
+      }),
+      h('span', null, label, hint && h('span', { class: 'hint', style: 'display: block' }, hint)),
+    );
+
+  const prepare = async (force) => {
+    try {
+      state.whatsappPlan = await api(`/api/reminders/whatsapp${force ? '?force=1' : ''}`);
+      render();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  const plan = state.whatsappPlan;
+
+  return h(
+    'section',
+    { class: 'card' },
+    h(
+      'header',
+      null,
+      h('h2', null, 'WhatsApp reminders'),
+      h('span', { class: 'hint' }, config.enabled ? 'on' : 'off'),
+    ),
+
+    auto
+      ? h(
+          'div',
+          { class: 'banner ok', style: 'margin-bottom: 14px' },
+          `Sending through ${WHATSAPP_PROVIDER_LABELS[data.whatsapp.provider] ?? data.whatsapp.provider}.`,
+          data.whatsapp.templated
+            ? null
+            : h(
+                'span',
+                { style: 'display: block; margin-top: 6px' },
+                'No template name is set, so messages are sent as plain text — which WhatsApp only allows within 24 hours of that person messaging your number. Set TRACKER_WHATSAPP_TEMPLATE for scheduled reminders.',
+              ),
+        )
+      : h(
+          'div',
+          { class: 'banner info', style: 'margin-bottom: 14px' },
+          h('strong', null, 'Free mode: one tap per person. '),
+          'WhatsApp charges for messages a business sends on its own, so this app writes each message and gives you a link. Tap it, WhatsApp opens with the reminder already written, you press send.',
+        ),
+
+    h(
+      'div',
+      { style: 'display: flex; flex-direction: column; gap: 14px' },
+      check(
+        'enabled',
+        'Include WhatsApp in the daily run',
+        auto
+          ? 'The scheduled run sends these along with the emails.'
+          : 'Nothing can be sent unattended without a WhatsApp Business account, so this only marks the channel as in use. Prepare the messages below and tap to send.',
+      ),
+
+      h(
+        'div',
+        { class: 'toolbar' },
+        number('Message daily within (days)', 'dailyWithinDays', 'Jobs due this many days from now are messaged every day.', 0, 365),
+        number('Mention jobs up to (days)', 'windowDays', 'Jobs further away than this are not mentioned at all.', 1, 365),
+        h(
+          'label',
+          { class: 'field' },
+          h('span', null, 'Weekly look-ahead on'),
+          h(
+            'select',
+            { onchange: (e) => save({ weeklyOn: e.target.value }) },
+            (data.weekdays ?? []).map((day) =>
+              h('option', { value: day, selected: config.weeklyOn === day }, day),
+            ),
+          ),
+        ),
+      ),
+      h(
+        'p',
+        { class: 'hint', style: 'margin: -4px 0 0' },
+        `Overdue jobs and anything due within ${config.dailyWithinDays} days go out every day. Jobs due in ${
+          config.dailyWithinDays + 1
+        }–${config.windowDays} days go out once a week, on ${config.weeklyOn}.`,
+      ),
+
+      check('includeOverdue', 'Include jobs that are already overdue'),
+      check(
+        'sendWhenEmpty',
+        'Message people who have nothing due',
+        'Off by default. A message every morning saying "nothing" is one people mute.',
+      ),
+
+      h(
+        'div',
+        { class: 'toolbar' },
+        h(
+          'button',
+          { class: 'btn primary', type: 'button', onclick: () => prepare(false) },
+          "Prepare today's messages",
+        ),
+        h(
+          'button',
+          {
+            class: 'btn',
+            type: 'button',
+            // Without this, a day when nothing is due produces an empty list
+            // that reads as a broken feature rather than a quiet week.
+            title: 'Write a message for everyone, including people with nothing due.',
+            onclick: () => prepare(true),
+          },
+          'Prepare for everyone',
+        ),
+        auto
+          ? h(
+              'button',
+              {
+                class: 'btn primary',
+                type: 'button',
+                onclick: async () => {
+                  if (!confirm("Send today's WhatsApp reminders to the whole team now?")) return;
+                  try {
+                    const result = await api('/api/reminders/whatsapp/run', { json: { force: true } });
+                    toast(
+                      result.sent
+                        ? `Sent ${result.sent} message${result.sent === 1 ? '' : 's'}${
+                            result.failed?.length ? `, ${result.failed.length} failed` : ''
+                          }.`
+                        : 'Nobody had anything due, so nothing was sent.',
+                    );
+                  } catch (error) {
+                    toast(error.message);
+                  }
+                },
+              },
+              'Send all now',
+            )
+          : null,
+      ),
+    ),
+
+    plan
+      ? h(
+          'div',
+          { style: 'margin-top: 18px' },
+          h(
+            'div',
+            { class: 'nav-label', style: 'padding-left: 0' },
+            `${plan.date} (${plan.weekday}) — ${plan.messages.length} message${
+              plan.messages.length === 1 ? '' : 's'
+            } ready`,
+          ),
+          plan.messages.length
+            ? h(
+                'div',
+                { class: 'table-wrap' },
+                h(
+                  'table',
+                  null,
+                  h(
+                    'thead',
+                    null,
+                    h(
+                      'tr',
+                      null,
+                      h('th', null, 'To'),
+                      h('th', null, 'Overdue'),
+                      h('th', null, 'Due soon'),
+                      h('th', null, 'Theirs'),
+                      h('th', null, 'Send'),
+                    ),
+                  ),
+                  h(
+                    'tbody',
+                    null,
+                    plan.messages.map((m) =>
+                      h(
+                        'tr',
+                        { key: m.to },
+                        h('td', null, m.name ? `${m.name} · +${m.to}` : `+${m.to}`),
+                        h('td', null, String(m.counts.overdue)),
+                        h('td', null, String(m.counts.urgent)),
+                        h('td', null, String(m.counts.mine)),
+                        h(
+                          'td',
+                          { style: 'white-space: nowrap' },
+                          h(
+                            'a',
+                            {
+                              class: 'btn primary',
+                              href: m.link,
+                              // A new tab, because the app is a single page and
+                              // navigating away from it would lose the rest of
+                              // the list you are working through.
+                              target: '_blank',
+                              rel: 'noopener',
+                              // `.btn` was written for buttons, which carry no
+                              // underline of their own.
+                              style: 'text-decoration: none',
+                            },
+                            'Send on WhatsApp',
+                          ),
+                          h(
+                            'button',
+                            {
+                              class: 'btn ghost',
+                              type: 'button',
+                              style: 'margin-left: 6px',
+                              // The fallback that matters: a desktop without
+                              // WhatsApp installed, or a number the admin would
+                              // rather paste into a group chat than message
+                              // one-to-one.
+                              onclick: async () => {
+                                try {
+                                  await navigator.clipboard.writeText(m.text);
+                                  toast('Message copied.');
+                                } catch {
+                                  toast('Could not copy — select the text from the preview below.');
+                                }
+                              },
+                            },
+                            'Copy',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : h('p', { class: 'hint' }, 'Nobody has anything due today.'),
+
+          plan.skipped?.length
+            ? h(
+                'p',
+                { class: 'hint' },
+                `Nothing due for: ${plan.skipped.map((s) => s.name || `+${s.phone}`).join(', ')}.`,
+              )
+            : null,
+
+          // Named rather than silently absent: an account with no number never
+          // appears in the list at all, and that is how somebody goes a month
+          // without a reminder and nobody notices.
+          plan.withoutNumber?.length
+            ? h(
+                'p',
+                { class: 'hint' },
+                `No WhatsApp number on file: ${plan.withoutNumber
+                  .map((u) => u.name || u.email)
+                  .join(', ')}. Add one in Team below.`,
+              )
+            : null,
+
+          plan.messages.length
+            ? h(
+                'details',
+                { style: 'margin-top: 10px' },
+                h('summary', { class: 'hint' }, 'Look at the first message'),
+                h(
+                  'pre',
+                  {
+                    style:
+                      'white-space: pre-wrap; background: var(--surface-2, rgba(127,127,127,.08)); padding: 12px; border-radius: 8px; margin-top: 8px; font: 400 13px/1.5 inherit',
+                  },
+                  plan.messages[0].text,
+                ),
+              )
+            : null,
+        )
+      : null,
+  );
+}
+
 /**
  * Accounts and what each person may do.
  *
@@ -3346,6 +3686,7 @@ function renderSettings() {
               null,
               h('th', null, 'Name'),
               h('th', null, 'Email'),
+              h('th', null, 'WhatsApp'),
               h('th', null, 'Can do'),
               h('th', null, 'Registers'),
               h('th', null, 'Last signed in'),
@@ -3367,6 +3708,20 @@ function renderSettings() {
                   !user.active && h('div', null, h('span', { class: 'chip s-overdue' }, 'switched off')),
                 ),
                 h('td', { class: 'muted' }, user.email),
+                h(
+                  'td',
+                  null,
+                  h('input', {
+                    type: 'tel',
+                    // Typed however they like — `05x`, `+966 5x`, spaces and
+                    // dashes — and stored in one form. Rejecting a number for
+                    // its punctuation would just mean nobody fills this in.
+                    value: user.phone ? `+${user.phone}` : '',
+                    placeholder: '05x xxx xxxx',
+                    style: 'width: 150px',
+                    onchange: (e) => saveUser(user, { phone: e.target.value }),
+                  }),
+                ),
                 h(
                   'td',
                   null,
@@ -3458,6 +3813,7 @@ function renderSettings() {
               toast(`${userDraft.name} can now sign in.`);
               userDraft.name = '';
               userDraft.email = '';
+              userDraft.phone = '';
               userDraft.password = '';
               userDraft.registers = [];
               reload();
@@ -3496,6 +3852,20 @@ function renderSettings() {
               required: 'required',
               oninput: (e) => {
                 userDraft.email = e.target.value;
+              },
+            }),
+          ),
+          h(
+            'label',
+            { class: 'field grow' },
+            h('span', null, 'WhatsApp number'),
+            h('input', {
+              type: 'tel',
+              id: 'new-phone',
+              value: userDraft.phone ?? '',
+              placeholder: '05x xxx xxxx (optional)',
+              oninput: (e) => {
+                userDraft.phone = e.target.value;
               },
             }),
           ),
@@ -3592,6 +3962,7 @@ function renderSettings() {
     ),
 
     renderReminders(),
+    renderWhatsappReminders(),
 
     h(
       'section',

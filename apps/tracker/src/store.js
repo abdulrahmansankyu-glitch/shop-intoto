@@ -114,6 +114,11 @@ CREATE TABLE IF NOT EXISTS tracker.users (
   last_login_at timestamptz
 );
 
+-- WhatsApp number, added after the table already existed on the live database.
+-- IF NOT EXISTS makes this safe to run on every boot, which is what happens:
+-- the whole schema file is executed at startup rather than by a migration tool.
+ALTER TABLE tracker.users ADD COLUMN IF NOT EXISTS phone text;
+
 -- Key/value for things the server must remember across restarts, currently the
 -- session-signing secret: generated once so a redeploy does not sign everyone out.
 CREATE TABLE IF NOT EXISTS tracker.settings (
@@ -325,9 +330,9 @@ class PostgresStore {
 
   async insertUser(user) {
     await this.pool.query(
-      `INSERT INTO tracker.users (id, name, email, password_hash, role, registers, active, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [user.id, user.name, user.email, user.password_hash, user.role, JSON.stringify(user.registers ?? []), user.active, user.created_at],
+      `INSERT INTO tracker.users (id, name, email, phone, password_hash, role, registers, active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [user.id, user.name, user.email, user.phone ?? null, user.password_hash, user.role, JSON.stringify(user.registers ?? []), user.active, user.created_at],
     );
     return user;
   }

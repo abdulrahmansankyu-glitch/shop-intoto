@@ -205,3 +205,35 @@ services:
         sync: false
       - key: TRACKER_SMTP_PASSWORD
         sync: false
+
+      # --- WhatsApp reminders ----------------------------------------------
+      #
+      # None of these are needed to use WhatsApp. Without them the app runs in
+      # its free mode: it writes each person's message and gives an admin a link
+      # per person to tap and send. That costs nothing and needs no approval.
+      #
+      # They are only for sending unattended, which WhatsApp charges for. Meta's
+      # Cloud API needs a WhatsApp Business number, and a message the business
+      # starts must use a template approved in advance — TRACKER_WHATSAPP_TEMPLATE
+      # is that template's name, and without it a scheduled message is refused.
+      - key: TRACKER_WHATSAPP_TOKEN
+        sync: false
+      - key: TRACKER_WHATSAPP_PHONE_ID
+        sync: false
+      - key: TRACKER_WHATSAPP_TEMPLATE
+        sync: false
+
+      # Or Twilio, whose sandbox number is the easiest way to prove the plumbing
+      # before a company number exists. Each person opts in by messaging it once,
+      # and that opt-in lapses after 72 hours.
+      - key: TRACKER_TWILIO_SID
+        sync: false
+      - key: TRACKER_TWILIO_TOKEN
+        sync: false
+      - key: TRACKER_TWILIO_FROM
+        sync: false
+
+      # The country code assumed when somebody types a number the local way
+      # ("0551234567"). 966 is Saudi Arabia.
+      - key: TRACKER_WHATSAPP_COUNTRY
+        value: "966"

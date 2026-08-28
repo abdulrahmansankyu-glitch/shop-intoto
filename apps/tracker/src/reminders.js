@@ -2,17 +2,21 @@
  * Daily reminder rules, and the digest each person receives.
  *
  * The team's rule, in their words: remind about anything overdue or falling due
- * inside a month, and remind *daily* once fifteen days or less remain. That is
- * three bands, and only the first two go out every day — a job that is still
- * three weeks away does not need a message every morning to stay visible, and a
+ * inside a month, and remind *daily* once the deadline is close. That is three
+ * bands, and only the first two go out every day — a job that is still three
+ * weeks away does not need a message every morning to stay visible, and a
  * reminder that arrives daily regardless of urgency stops being read at all.
- * The sixteen-to-thirty band therefore goes out once a week.
+ * The rest of the month therefore goes out once a week.
+ *
+ * Two channels run on those bands with their own idea of "close": email at
+ * fifteen days, WhatsApp at seven. `planRun` plans the email, `planWhatsappRun`
+ * the WhatsApp messages, and both sit on the same `collectItems`.
  *
  * This module is deliberately free of Node built-ins, of storage and of the
- * mail transport: it takes records, accounts and a date, and returns the exact
- * set of messages to send. That is what makes the rules testable without a
- * database or an SMTP server, and what lets the Settings screen show a preview
- * that is the same computation as the send, not a second guess at it.
+ * transports: it takes records, accounts and a date, and returns the exact set
+ * of messages to send. That is what makes the rules testable without a database
+ * or an SMTP server, and what lets the Settings screen show a preview that is
+ * the same computation as the send, not a second guess at it.
  */
 
 import {
@@ -24,6 +28,7 @@ import {
   normaliseKey,
   todayIso,
 } from './registers.js';
+import { normalisePhone } from './phone.js';
 
 export const WEEKDAYS = [
   'Sunday',
@@ -34,6 +39,24 @@ export const WEEKDAYS = [
   'Friday',
   'Saturday',
 ];
+
+/**
+ * WhatsApp keeps its own thresholds.
+ *
+ * The team asked for a month's warning over WhatsApp and then a message once a
+ * week remains — a tighter daily band than the email's fifteen days. That is the
+ * right way round: an email is read when it is opened, a WhatsApp message
+ * interrupts, and a channel that interrupts every morning about something three
+ * weeks away is a channel that gets muted.
+ */
+export const DEFAULT_WHATSAPP_CONFIG = {
+  enabled: false,
+  windowDays: DUE_SOON_DAYS,
+  dailyWithinDays: 7,
+  weeklyOn: 'Sunday',
+  includeOverdue: true,
+  sendWhenEmpty: false,
+};
 
 /**
  * Defaults.
@@ -55,6 +78,7 @@ export const DEFAULT_REMINDER_CONFIG = {
   sendWhenEmpty: false,
   extraRecipients: [],
   appUrl: '',
+  whatsapp: DEFAULT_WHATSAPP_CONFIG,
 };
 
 /** Ordered widest-urgency-first; the digest renders them in this order. */
@@ -74,9 +98,9 @@ const clampInt = (value, fallback, min, max) => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Coerce whatever is stored (or posted) into a config that cannot misbehave. */
-export function normaliseConfig(raw = {}) {
-  const windowDays = clampInt(raw.windowDays, DEFAULT_REMINDER_CONFIG.windowDays, 1, 365);
+/** The thresholds a channel sends on, clamped so no setting can misbehave. */
+function normaliseBands(raw = {}, defaults = DEFAULT_REMINDER_CONFIG) {
+  const windowDays = clampInt(raw.windowDays, defaults.windowDays, 1, 365);
   return {
     enabled: Boolean(raw.enabled),
     windowDays,
@@ -84,11 +108,19 @@ export function normaliseConfig(raw = {}) {
     // would silently promote the whole "coming up" band to a daily message.
     dailyWithinDays: Math.min(
       windowDays,
-      clampInt(raw.dailyWithinDays, DEFAULT_REMINDER_CONFIG.dailyWithinDays, 0, 365),
+      clampInt(raw.dailyWithinDays, defaults.dailyWithinDays, 0, 365),
     ),
-    weeklyOn: WEEKDAYS.includes(raw.weeklyOn) ? raw.weeklyOn : DEFAULT_REMINDER_CONFIG.weeklyOn,
+    weeklyOn: WEEKDAYS.includes(raw.weeklyOn) ? raw.weeklyOn : defaults.weeklyOn,
     includeOverdue: raw.includeOverdue !== false,
     sendWhenEmpty: Boolean(raw.sendWhenEmpty),
+  };
+}
+
+/** Coerce whatever is stored (or posted) into a config that cannot misbehave. */
+export function normaliseConfig(raw = {}) {
+  return {
+    ...normaliseBands(raw, DEFAULT_REMINDER_CONFIG),
+    whatsapp: normaliseBands(raw.whatsapp ?? {}, DEFAULT_WHATSAPP_CONFIG),
     extraRecipients: [
       ...new Set(
         (Array.isArray(raw.extraRecipients) ? raw.extraRecipients : [])
@@ -534,4 +566,183 @@ Sent automatically by the Engineering Activity Tracker.
     .join('\n');
 
   return { subject: subjectFor(counts, today), html, text };
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp
+// ---------------------------------------------------------------------------
+
+/**
+ * The band settings WhatsApp sends on.
+ *
+ * A separate set from the email's, so tightening one channel does not tighten
+ * the other. `extraRecipients` and `appUrl` are carried across because they
+ * belong to the deployment rather than to a channel — there is one tracker URL,
+ * whichever way you are told about it.
+ */
+export function whatsappConfigOf(config) {
+  const cfg = normaliseConfig(config);
+  return { ...cfg.whatsapp, extraRecipients: [], appUrl: cfg.appUrl };
+}
+
+/**
+ * Who has a WhatsApp number worth messaging.
+ *
+ * Same rules as the email list and for the same reasons: active accounts only,
+ * and an account limited to certain registers is limited in its reminders too.
+ * Nobody without a number, because a WhatsApp reminder to a person who never
+ * gave one is not a reminder, it is a link to nowhere.
+ *
+ * There are no `extraRecipients` here. An email address typed into a settings
+ * box reaches a mailbox somebody chose to publish; a phone number typed into
+ * one reaches a person's private phone, and the only numbers this app should
+ * hold are the ones its own team members put on their own accounts.
+ */
+export function whatsappRecipientsFor(users, country) {
+  const seen = new Set();
+  const list = [];
+
+  for (const user of users) {
+    if (user.active === false) continue;
+    const phone = normalisePhone(user.phone, country);
+    if (!phone || seen.has(phone)) continue;
+    seen.add(phone);
+    list.push({
+      phone,
+      email: user.email ?? null,
+      name: user.name ?? null,
+      registers: Array.isArray(user.registers) ? user.registers : [],
+    });
+  }
+
+  return list;
+}
+
+/**
+ * How many rows one WhatsApp message lists.
+ *
+ * Far fewer than the email's forty. The message has to survive being pasted
+ * into a `wa.me` link, and more to the point it is read on a lock screen — a
+ * fifty-line message is one nobody finishes. The counts at the top stay
+ * truthful however many rows are shown, and the rest are a tap away in the app.
+ */
+export const MAX_WHATSAPP_ROWS = 12;
+
+/**
+ * One person's reminder, written for WhatsApp.
+ *
+ * Plain text with WhatsApp's own `*bold*`, because that is all it renders —
+ * there is no HTML here, and a message built out of table borders would arrive
+ * as punctuation soup.
+ *
+ * Their own jobs come first and are the only ones listed in full; everything
+ * else is summarised by band. On a phone, the useful question is "what do I
+ * have to do", not "what is the department's position", which is the report's
+ * job and the email's.
+ */
+export function renderWhatsappDigest({ recipient, items, counts, config, today }) {
+  const mine = items.filter((i) => ownerMatches(i.record.actionBy, recipient.name));
+  const others = items.filter((i) => !mine.includes(i));
+
+  const line = (item, withOwner) =>
+    `• *${item.record.ref ?? '—'}* (${registerShort(item.record.register)}) — ${
+      item.record.title ?? 'No description'
+    }\n  ${duePhrase(item.days)}, ${formatDisplayDate(item.record.dueDate)}${
+      withOwner ? ` — ${item.record.actionBy ?? 'Unassigned'}` : ''
+    }`;
+
+  const section = (title, rows, withOwner) => {
+    if (!rows.length) return null;
+    const shown = rows.slice(0, MAX_WHATSAPP_ROWS).map((item) => line(item, withOwner));
+    const more =
+      rows.length > MAX_WHATSAPP_ROWS ? `  …and ${rows.length - MAX_WHATSAPP_ROWS} more.` : null;
+    return [`*${title}*`, ...shown, more].filter((l) => l !== null).join('\n');
+  };
+
+  const body = [
+    section(`Assigned to you (${mine.length})`, mine, false),
+    // Only the urgent half of everybody else's work. The whole month's list for
+    // the whole department is a report, and it is already one tap away.
+    section(
+      'Others overdue or due soon',
+      others.filter((i) => i.band !== 'soon'),
+      true,
+    ),
+  ].filter(Boolean);
+
+  const text = [
+    `*Engineering Action Reminder* — ${formatDisplayDate(today)}`,
+    'Solid Handling Plant / DCU',
+    '',
+    recipient.name ? `Hello ${recipient.name},` : 'Hello,',
+    `Overdue: *${counts.overdue}*  |  Due in ${config.dailyWithinDays} days: *${counts.urgent}*  |  Due in ${config.windowDays} days: *${counts.soon}*`,
+    '',
+    body.length ? body.join('\n\n') : 'Nothing is overdue or falling due. Thank you.',
+    '',
+    counts.undated
+      ? `${counts.undated} open job${counts.undated === 1 ? ' has' : 's have'} no target date.`
+      : null,
+    config.appUrl ? `Open the tracker: ${config.appUrl}` : null,
+  ]
+    // Only the optional lines drop out; filtering every empty string would take
+    // the deliberate blank separators with them.
+    .filter((l) => l !== null && l !== undefined)
+    .join('\n');
+
+  return { text };
+}
+
+/**
+ * Work out every WhatsApp message that should go out on `today`.
+ *
+ * Deliberately the same shape as `planRun`, and deliberately a separate
+ * function rather than a flag on it: the two channels reach different people
+ * (one by mailbox, one by phone) on different thresholds, and a single planner
+ * pretending otherwise would have to be untangled at every call site anyway.
+ */
+export function planWhatsappRun({ records, users, config, today = todayIso(), country }) {
+  const cfg = whatsappConfigOf(config);
+  const bands = bandsSendingOn(cfg, today);
+  const recipients = whatsappRecipientsFor(users, country);
+  const messages = [];
+  const skipped = [];
+
+  if (!bands.length) {
+    return { date: today, weekday: weekdayOf(today), bands, messages, skipped, recipients: recipients.length };
+  }
+
+  for (const recipient of recipients) {
+    const visible = recipient.registers.length
+      ? records.filter((r) => recipient.registers.includes(r.register))
+      : records;
+
+    const items = collectItems(visible, cfg, today);
+    const counts = {
+      overdue: items.filter((i) => i.band === 'overdue').length,
+      urgent: items.filter((i) => i.band === 'urgent').length,
+      soon: items.filter((i) => i.band === 'soon').length,
+      mine: items.filter((i) => ownerMatches(i.record.actionBy, recipient.name)).length,
+      undated: undatedCount(visible),
+    };
+
+    if (!items.length && !cfg.sendWhenEmpty) {
+      skipped.push({ phone: recipient.phone, name: recipient.name, reason: 'nothing due' });
+      continue;
+    }
+
+    messages.push({
+      to: recipient.phone,
+      name: recipient.name,
+      email: recipient.email,
+      registers: recipient.registers,
+      counts,
+      items,
+      // Carried on the message so the transport can fill a WhatsApp template
+      // without being handed the config as well.
+      dailyWithinDays: cfg.dailyWithinDays,
+      ...renderWhatsappDigest({ recipient, items, counts, config: cfg, today }),
+    });
+  }
+
+  return { date: today, weekday: weekdayOf(today), bands, messages, skipped, recipients: recipients.length };
 }

@@ -56,9 +56,13 @@ import {
   bandsSendingOn,
   normaliseConfig,
   ownerMatches,
+  planRun,
+  planWhatsappRun,
   sendsToday,
   weekdayOf,
 } from '../src/reminders.js';
+import { displayPhone, normalisePhone } from '../src/phone.js';
+import { createWhatsapp, explainCloudFailure, whatsappLink } from '../src/whatsapp.js';
 import { createApp, summarise } from '../src/server.js';
 import { applyQuery, toApi, toRow } from '../src/store.js';
 
@@ -2144,4 +2148,291 @@ test('the change log is for admins, and is not merely hidden from everyone else'
     const mine = await (await admin.get('/api/dashboard')).json();
     assert.ok(mine.activity.length > 0, 'and does for an admin');
   });
+});
+
+// ---------------------------------------------------------------------------
+// WhatsApp reminders
+// ---------------------------------------------------------------------------
+
+test('a phone number is stored one way however it was typed', () => {
+  // All five of these are the same phone, and all five are how somebody on the
+  // plant might write it down.
+  for (const typed of [
+    '0551234567',
+    '055 123 4567',
+    '+966 55 123 4567',
+    '00966551234567',
+    '966-55-123-4567',
+  ]) {
+    assert.equal(normalisePhone(typed), '966551234567', typed);
+  }
+
+  // A bare local number with no trunk zero.
+  assert.equal(normalisePhone('551234567'), '966551234567');
+  // Another country, written in full, is left alone.
+  assert.equal(normalisePhone('+91 98765 43210'), '919876543210');
+  // A different deployment's country code.
+  assert.equal(normalisePhone('0301 2345678', '92'), '923012345678');
+
+  // Nonsense returns null rather than a guess, so the app can say "no WhatsApp
+  // number" instead of preparing a message for a stranger.
+  for (const junk of ['', null, undefined, 'not a phone', '12', '1'.repeat(20)]) {
+    assert.equal(normalisePhone(junk), null, String(junk));
+  }
+
+  assert.equal(displayPhone('0551234567'), '+966 55 123 4567');
+  assert.equal(displayPhone('rubbish'), '');
+});
+
+test('WhatsApp warns a week ahead where email warns a fortnight ahead', () => {
+  // The team asked for the month's warning on both channels but a daily message
+  // once a week remains — a tighter band than the email's fifteen days. The two
+  // must not quietly share one setting.
+  // A Sunday, because the weekly band only goes out on one day and the whole
+  // point of this test is that the two channels put the same job in different
+  // bands — which is invisible on a Tuesday, when nothing weekly is sent.
+  const today = '2026-08-09';
+  const records = [
+    openRecord({ id: 'a', ref: 'IWS-10', dueDate: '2026-08-16', actionBy: 'Ali' }), // 7 days
+    openRecord({ id: 'b', ref: 'IWS-11', dueDate: '2026-08-20', actionBy: 'Ali' }), // 11 days
+  ];
+  const users = [
+    { name: 'Ali', email: 'ali@example.com', phone: '0551234567', registers: [], active: true },
+  ];
+  const config = normaliseConfig({ enabled: true, whatsapp: { enabled: true } });
+
+  const email = planRun({ records, users, config, today }).messages[0];
+  assert.equal(email.counts.urgent, 2, 'both are inside the email fortnight');
+  assert.equal(email.counts.soon, 0);
+
+  const chat = planWhatsappRun({ records, users, config, today }).messages[0];
+  assert.equal(chat.counts.urgent, 1, 'only the seven-day job is urgent on WhatsApp');
+  assert.equal(chat.counts.soon, 1, 'the eleven-day one waits for the weekly message');
+});
+
+test('somebody with no WhatsApp number is left out of the plan, not messaged badly', () => {
+  const users = [
+    { name: 'Ali', email: 'ali@example.com', phone: '0551234567', active: true },
+    { name: 'Sara', email: 'sara@example.com', phone: null, active: true },
+    { name: 'Omar', email: 'omar@example.com', phone: '0559999999', active: false },
+  ];
+  const plan = planWhatsappRun({
+    records: [openRecord({ dueDate: '2020-01-01' })],
+    users,
+    config: normaliseConfig({ whatsapp: { enabled: true } }),
+    today: '2026-08-11',
+  });
+
+  assert.equal(plan.recipients, 1, 'no number and switched off are both excluded');
+  assert.deepEqual(
+    plan.messages.map((m) => m.to),
+    ['966551234567'],
+  );
+});
+
+test('a click-to-send link carries the whole message and survives its punctuation', () => {
+  const link = whatsappLink('0551234567', '*Overdue* — PA-2607/09 & valve #3\nsecond line');
+  assert.match(link, /^https:\/\/wa\.me\/966551234567\?text=/);
+
+  // The round trip is the point: `&`, `#`, `/` and a newline all have meaning
+  // inside a URL, and an unescaped `#` would silently truncate the message at
+  // the fragment.
+  const text = decodeURIComponent(new URL(link).searchParams.get('text'));
+  assert.equal(text, '*Overdue* — PA-2607/09 & valve #3\nsecond line');
+
+  assert.equal(whatsappLink('nonsense', 'hello'), null);
+});
+
+test('the free mode prepares a tappable message per person and names who has no number', async () => {
+  await withAdmin(async ({ asAdmin }) => {
+    const admin = asAdmin();
+
+    // A second account with a number. The admin themselves has none, which is
+    // the case the panel has to report rather than silently skip.
+    await admin.post('/api/users', {
+      name: 'Ali Hassan',
+      email: 'ali@example.com',
+      phone: '055 123 4567',
+      password: 'shp-tracker-2026',
+      role: 'editor',
+    });
+
+    await admin.post('/api/records', {
+      register: 'iws',
+      data: {
+        iwsNumber: 'IWS-77',
+        description: 'Replace the actuator',
+        targetDate: '2020-01-01',
+        actionBy: 'Ali Hassan',
+      },
+    });
+
+    const plan = await (await admin.get('/api/reminders/whatsapp')).json();
+    assert.equal(plan.messages.length, 1);
+
+    const message = plan.messages[0];
+    assert.equal(message.to, '966551234567', 'stored in one form whatever was typed');
+    assert.match(message.link, /^https:\/\/wa\.me\/966551234567\?text=/);
+    assert.match(message.text, /IWS-77/);
+    assert.match(message.text, /Replace the actuator/);
+    assert.equal(message.counts.overdue, 1);
+
+    // The link's text is the message, not a summary of it.
+    const carried = decodeURIComponent(new URL(message.link).searchParams.get('text'));
+    assert.equal(carried, message.text);
+
+    assert.deepEqual(
+      plan.withoutNumber.map((u) => u.email),
+      ['abdul@example.com'],
+      'the admin has no number and is named rather than quietly dropped',
+    );
+  });
+});
+
+test('without a paid WhatsApp account nothing is sent unattended, and it says so', async () => {
+  const mailer = fakeMailer();
+  await withAdmin(
+    async ({ base, asAdmin }) => {
+      const admin = asAdmin();
+      await admin.post('/api/users', {
+        name: 'Ali Hassan',
+        email: 'ali@example.com',
+        phone: '0551234567',
+        password: 'shp-tracker-2026',
+        role: 'editor',
+      });
+      await admin.post('/api/records', {
+        register: 'iws',
+        data: { iwsNumber: 'IWS-77', description: 'Late scope', targetDate: '2020-01-01', actionBy: 'Ali Hassan' },
+      });
+      await admin.put('/api/reminders', { enabled: true, whatsapp: { enabled: true } });
+
+      const settings = await (await admin.get('/api/reminders')).json();
+      assert.equal(settings.whatsapp.provider, 'link');
+      assert.equal(settings.whatsapp.configured, false, 'honest: a person still has to tap send');
+      assert.match(settings.whatsapp.problem, /prepared as links/);
+      assert.equal(settings.config.whatsapp.enabled, true);
+      assert.equal(settings.config.whatsapp.dailyWithinDays, 7, 'the WhatsApp default is a week');
+      assert.equal(settings.config.dailyWithinDays, 15, 'and the email default is untouched');
+
+      // Asking it to send anyway is refused with the reason, not a silent no-op.
+      const refused = await admin.post('/api/reminders/whatsapp/run', { force: true });
+      assert.equal(refused.status, 400);
+      assert.match((await refused.json()).error, /WhatsApp Business account/);
+
+      // The scheduled run still goes ahead — WhatsApp being hand-sent must not
+      // cost the team their emails.
+      const run = await (
+        await fetch(`${base}/api/reminders/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-reminder-secret': 'let-me-in' },
+          body: '{}',
+        })
+      ).json();
+      // Both accounts — the admin sees every register too.
+      assert.equal(run.sent, 2);
+      assert.equal(run.whatsappSent, 0, 'nothing claimed as sent that a person still has to tap');
+      assert.equal(mailer.outbox.length, 2);
+    },
+    { env: { TRACKER_REMINDER_SECRET: 'let-me-in' }, overrides: { mailer } },
+  );
+});
+
+test('editing a WhatsApp number keeps the rest of the reminder settings alone', async () => {
+  await withAdmin(async ({ asAdmin }) => {
+    const admin = asAdmin();
+
+    // The panel sends only the field it changed. A shallow merge on the server
+    // reset every other WhatsApp setting to its default each time.
+    await admin.put('/api/reminders', { whatsapp: { windowDays: 45, weeklyOn: 'Monday' } });
+    await admin.put('/api/reminders', { whatsapp: { enabled: true } });
+
+    const config = (await (await admin.get('/api/reminders')).json()).config;
+    assert.equal(config.whatsapp.enabled, true);
+    assert.equal(config.whatsapp.windowDays, 45, 'not reset by the second save');
+    assert.equal(config.whatsapp.weeklyOn, 'Monday');
+
+    // A number that cannot be dialled is refused rather than stored broken.
+    const created = await admin.post('/api/users', {
+      name: 'Sara',
+      email: 'sara@example.com',
+      phone: 'ring me',
+      password: 'shp-tracker-2026',
+    });
+    assert.equal(created.status, 400);
+    assert.match((await created.json()).error, /mobile number/);
+  });
+});
+
+const CLOUD_ENV = {
+  TRACKER_WHATSAPP_TOKEN: 'token-abc',
+  TRACKER_WHATSAPP_PHONE_ID: '1234567890',
+  TRACKER_WHATSAPP_TEMPLATE: 'engineering_reminder',
+};
+
+test('the paid transport sends an approved template, since free text is refused after a day', async () => {
+  const whatsapp = createWhatsapp(CLOUD_ENV);
+  assert.equal(whatsapp.provider, 'cloud');
+  assert.equal(whatsapp.configured, true);
+  assert.equal(whatsapp.templated, true);
+
+  await withStubbedFetch(
+    () => new Response('{"messages":[{"id":"wamid.1"}]}', { status: 200 }),
+    async (calls) => {
+      await whatsapp.send({
+        to: '966551234567',
+        name: 'Ali Hassan',
+        text: 'ignored when a template is used',
+        counts: { overdue: 3, urgent: 2 },
+        dailyWithinDays: 7,
+      });
+
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].url, /graph\.facebook\.com\/v21\.0\/1234567890\/messages$/);
+
+      const body = JSON.parse(calls[0].options.body);
+      assert.equal(body.type, 'template');
+      assert.equal(body.template.name, 'engineering_reminder');
+      assert.deepEqual(
+        body.template.components[0].parameters.map((p) => p.text),
+        ['Ali Hassan', '3', '2', '7'],
+        'name, overdue, due soon, days — in the order the template expects',
+      );
+    },
+  );
+});
+
+test('Meta refusing a message is explained, not passed through as a number', () => {
+  // 131047 is the one everybody hits: it means "outside the 24-hour window",
+  // which is where every scheduled reminder falls, and the raw text does not
+  // say what to do about it.
+  const explained = explainCloudFailure(400, '{"error":{"code":131047,"message":"Re-engagement message"}}');
+  assert.match(explained, /131047/, 'their own words are kept');
+  assert.match(explained, /24 hours/);
+  assert.match(explained, /TRACKER_WHATSAPP_TEMPLATE/, 'and it names the fix');
+
+  assert.match(
+    explainCloudFailure(404, '{"error":{"code":132001,"message":"template name does not exist"}}'),
+    /Approved rather than Pending/,
+  );
+  assert.match(explainCloudFailure(401, '{"error":{"code":190}}'), /System User/);
+});
+
+test('a WhatsApp failure for one person does not cost everybody else theirs', async () => {
+  const whatsapp = createWhatsapp({ ...CLOUD_ENV, TRACKER_WHATSAPP_TEMPLATE: '' });
+
+  await withStubbedFetch(
+    (_url, options) =>
+      JSON.parse(options.body).to === '966550000002'
+        ? new Response('{"error":{"code":131030,"message":"not in allowed list"}}', { status: 400 })
+        : new Response('{}', { status: 200 }),
+    async () => {
+      const result = await whatsapp.sendAll(
+        ['966550000001', '966550000002', '966550000003'].map((to) => ({ to, text: 'hello', counts: {} })),
+      );
+      assert.deepEqual(result.sent, ['966550000001', '966550000003']);
+      assert.equal(result.failed.length, 1);
+      assert.match(result.failed[0].error, /allow-list/);
+    },
+  );
 });
