@@ -2113,3 +2113,35 @@ test('an export colours the priority and a missed date, and nothing else', async
   }
   assert.equal(sheet.getRow(3).getCell(column.Description).alignment.vertical, 'middle');
 });
+
+test('the change log is for admins, and is not merely hidden from everyone else', async () => {
+  await withAdmin(async ({ base, post, asAdmin, as }) => {
+    const admin = asAdmin();
+    await admin.post('/api/records', {
+      register: 'iws',
+      data: { iwsNumber: 'IWS-1', description: 'Something to log' },
+    });
+    await admin.post('/api/users', {
+      name: 'Rehan',
+      email: 'rehan@example.com',
+      password: 'conveyor-2026',
+      role: 'editor',
+    });
+
+    const login = await (
+      await post('/api/auth/login', { email: 'rehan@example.com', password: 'conveyor-2026' })
+    ).json();
+    const editor = as(login.token);
+
+    assert.equal((await editor.get('/api/activity')).status, 403, 'an editor cannot read it');
+    assert.equal((await admin.get('/api/activity')).status, 200, 'an admin can');
+
+    // Omitted from the payload, not hidden in the browser: anything the reader
+    // may not see must not be sent to them in the first place.
+    const theirs = await (await editor.get('/api/dashboard')).json();
+    assert.deepEqual(theirs.activity, [], 'the dashboard carries no change log for them');
+
+    const mine = await (await admin.get('/api/dashboard')).json();
+    assert.ok(mine.activity.length > 0, 'and does for an admin');
+  });
+});

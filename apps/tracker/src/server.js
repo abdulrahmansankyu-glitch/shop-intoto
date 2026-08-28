@@ -255,6 +255,19 @@ export async function createApp(env = process.env, overrides = {}) {
    */
   const mayUseRegister = (req, registerId) => !req.user || canUseRegister(req.user, registerId);
 
+  /**
+   * Who may see the change log.
+   *
+   * "Recent changes" is a supervision record — who edited what and when, across
+   * the whole department. The team can already see the work itself in the
+   * registers; what they do not need is each other's editing history. Admins
+   * only, then.
+   *
+   * As elsewhere, no signed-in account means the deployment has no accounts yet
+   * and there are no roles to apply.
+   */
+  const maySeeActivity = (req) => !req.user || can(req.user, 'manage');
+
   /** Refuse a register this account is not allowed to touch, and say so. */
   const allowRegister = (req, res, registerId) => {
     if (mayUseRegister(req, registerId)) return true;
@@ -709,7 +722,10 @@ export async function createApp(env = process.env, overrides = {}) {
 
       res.json({
         ...summary,
-        activity: await store.recentActivity(15),
+        // Omitted rather than hidden in the browser: a payload that carries what
+        // the reader may not see is one screenshot of the network tab away from
+        // not being hidden at all.
+        activity: maySeeActivity(req) ? await store.recentActivity(15) : [],
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -1317,8 +1333,14 @@ export async function createApp(env = process.env, overrides = {}) {
     }
   });
 
-  app.get('/api/activity', requireAccess('read'), async (_req, res, next) => {
+  app.get('/api/activity', requireAccess('read'), async (req, res, next) => {
     try {
+      // Not `requireAccess('manage')`: that also demands the recent password
+      // confirmation, which is right for changing who has access and far too
+      // much for reading a list.
+      if (!maySeeActivity(req)) {
+        return asError(res, 403, 'Only an admin can see the change log.');
+      }
       res.json({ activity: await store.recentActivity(60) });
     } catch (error) {
       next(error);

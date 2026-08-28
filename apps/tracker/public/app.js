@@ -452,6 +452,15 @@ function go(view, registerId = null) {
     return;
   }
 
+  // The link is hidden, but a bookmark or a back button is not the link. Landing
+  // somebody on a page that would only ever say "not allowed" is worse than
+  // taking them somewhere useful.
+  if (view === 'activity' && !canSeeActivity()) {
+    state.view = 'dashboard';
+    loadDashboard();
+    return;
+  }
+
   if (view === 'dashboard') loadDashboard();
   else if (view === 'rota') loadRota();
   else if (view === 'register') {
@@ -480,6 +489,18 @@ const canWrite = () => ['editor', 'admin'].includes(state.me?.role);
 // treats its holder as an admin so nothing is hidden from them, but there is
 // nobody to administer.
 const canManage = () => state.me?.role === 'admin' && !state.authState?.disabled;
+
+/**
+ * Who sees "Recent changes".
+ *
+ * A supervision record rather than a working tool: it is every edit anybody has
+ * made, across the whole department. The team can already see the work itself
+ * in the registers; what they do not need is each other's editing history.
+ *
+ * Unlike `canManage`, this holds in the offline build too — there the file is
+ * the permission, and its holder is the only person who could be hidden from.
+ */
+const canSeeActivity = () => !state.me || state.me.role === 'admin';
 
 /** The registers this account may open, in the catalogue's order. */
 function myRegisters() {
@@ -863,16 +884,17 @@ function renderSidebar() {
       h('span', { class: 'short' }, '↓'),
       h('span', { class: 'grow' }, 'Export all'),
     ),
-    h(
-      'button',
-      {
-        class: 'nav-item',
-        'aria-current': String(state.view === 'activity'),
-        onclick: () => go('activity'),
-      },
-      h('span', { class: 'short' }, '⟳'),
-      h('span', { class: 'grow' }, 'Recent changes'),
-    ),
+    canSeeActivity() &&
+      h(
+        'button',
+        {
+          class: 'nav-item',
+          'aria-current': String(state.view === 'activity'),
+          onclick: () => go('activity'),
+        },
+        h('span', { class: 'short' }, '⟳'),
+        h('span', { class: 'grow' }, 'Recent changes'),
+      ),
 
     canManage() &&
       h(
@@ -1648,13 +1670,14 @@ function renderDashboard() {
         : h('div', { class: 'empty' }, 'Nothing overdue or due in the next month. '),
     ),
 
-    data.activity?.length &&
-      h(
-        'section',
-        { class: 'card' },
-        h('header', null, h('h2', null, 'Recent changes')),
-        h('div', { class: 'activity-list' }, data.activity.slice(0, 8).map(activityItem)),
-      ),
+    canSeeActivity() && data.activity?.length
+      ? h(
+          'section',
+          { class: 'card' },
+          h('header', null, h('h2', null, 'Recent changes')),
+          h('div', { class: 'activity-list' }, data.activity.slice(0, 8).map(activityItem)),
+        )
+      : null,
   );
 }
 

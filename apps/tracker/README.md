@@ -41,7 +41,14 @@ to that file and nothing else.
 - **A ring per register** — overdue, due within 30 days, open, closed — summing to
   that register's total, with all four printed beside it.
 - **Needs attention** — everything overdue or due inside a month, soonest first.
-- **Recent changes** — who changed what, and when.
+- **Recent changes** — who changed what, and when. **Admins only**: it is a
+  supervision record rather than a working tool, and the team can already see
+  the work itself in the registers. Non-admins get no link, no card, and no
+  change log in the dashboard payload — anything they may not see is not sent to
+  them in the first place, since hiding it in the browser is one look at the
+  network tab away from not being hidden. The offline build still shows it: the
+  file is the permission there, and its holder is the only person it could be
+  kept from.
 
 **The department as a landscape** — a column per register on a floor you can
 turn, stacked by state: closed at the base, then open, then due within the
@@ -504,7 +511,7 @@ it uses that instead; the tables are created on boot.
 | `TRACKER_MAIL_FROM` · `TRACKER_GRAPH_*` · `TRACKER_SMTP_*` · `TRACKER_BREVO_API_KEY` · `TRACKER_RESEND_API_KEY` | — | Reminder email — see above |
 
 ```bash
-pnpm --filter @intoto/tracker test     # 81 tests, no database needed
+pnpm --filter @intoto/tracker test     # 82 tests, no database needed
 ```
 
 ---
@@ -610,7 +617,7 @@ src/report.js      the printable Engineering Department Updates sheet
 src/autonumber.js  the PA-YYMM-NN rule for Action Notice document numbers
 src/reminders.js   who is reminded about what, and the digest they receive
 src/mailer.js      Microsoft Graph, SMTP, Brevo or Resend behind one send()
-test/              81 tests over the parts that would fail silently
+test/              82 tests over the parts that would fail silently
 ```
 
 The browser never carries its own copy of the register definitions — it reads them
