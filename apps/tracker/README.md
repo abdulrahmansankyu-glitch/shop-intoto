@@ -370,8 +370,8 @@ open the dashboard to find out that something is late.
 | Band | Reminded |
 |---|---|
 | Overdue | Every day |
-| Due within 15 days | Every day |
-| Due in 16–30 days | Once a week, on Sunday |
+| Due within 7 days | Every day |
+| Due in 8–30 days | Once a week, on Sunday |
 | Beyond 30 days, or no date set | Not at all |
 
 The middle band is the whole point of the design. Emailing everything inside a
@@ -512,13 +512,13 @@ nobody notices.
 No account, no approval, no cost, and nothing that can get a number banned,
 because the message is sent by a person from their own WhatsApp.
 
-### The bands are the team's, and they are not the email's
+### The bands are the team's, and they stay separate from the email's
 
-A month's warning, then a message every day once **a week** remains — tighter
-than the email's fifteen days, and deliberately a separate setting. An email is
-read when it is opened; a WhatsApp message interrupts, and a channel that
-interrupts every morning about something three weeks away is a channel that gets
-muted.
+A month's warning, then a message every day once **a week** remains. Both
+channels start chasing daily at seven days, but they remain two settings rather
+than one: an email is read when it is opened, a WhatsApp message interrupts, so
+if the daily band is ever widened it should be widened on email alone. A channel
+that interrupts every morning about something three weeks away gets muted.
 
 The message itself is shorter than the digest for the same reason: the reader's
 own jobs in full, everybody else's urgent ones summarised, twelve rows at most.

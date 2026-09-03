@@ -2184,10 +2184,10 @@ test('a phone number is stored one way however it was typed', () => {
   assert.equal(displayPhone('rubbish'), '');
 });
 
-test('WhatsApp warns a week ahead where email warns a fortnight ahead', () => {
-  // The team asked for the month's warning on both channels but a daily message
-  // once a week remains — a tighter band than the email's fifteen days. The two
-  // must not quietly share one setting.
+test('the two channels keep separate daily thresholds', () => {
+  // Both default to a week, so this widens the email's band on purpose: the
+  // point is that the two are independent settings and one cannot quietly drag
+  // the other with it.
   // A Sunday, because the weekly band only goes out on one day and the whole
   // point of this test is that the two channels put the same job in different
   // bands — which is invisible on a Tuesday, when nothing weekly is sent.
@@ -2199,10 +2199,14 @@ test('WhatsApp warns a week ahead where email warns a fortnight ahead', () => {
   const users = [
     { name: 'Ali', email: 'ali@example.com', phone: '0551234567', registers: [], active: true },
   ];
-  const config = normaliseConfig({ enabled: true, whatsapp: { enabled: true } });
+  const config = normaliseConfig({
+    enabled: true,
+    dailyWithinDays: 15,
+    whatsapp: { enabled: true },
+  });
 
   const email = planRun({ records, users, config, today }).messages[0];
-  assert.equal(email.counts.urgent, 2, 'both are inside the email fortnight');
+  assert.equal(email.counts.urgent, 2, 'both are inside the widened email band');
   assert.equal(email.counts.soon, 0);
 
   const chat = planWhatsappRun({ records, users, config, today }).messages[0];
@@ -2313,7 +2317,7 @@ test('without a paid WhatsApp account nothing is sent unattended, and it says so
       assert.match(settings.whatsapp.problem, /prepared as links/);
       assert.equal(settings.config.whatsapp.enabled, true);
       assert.equal(settings.config.whatsapp.dailyWithinDays, 7, 'the WhatsApp default is a week');
-      assert.equal(settings.config.dailyWithinDays, 15, 'and the email default is untouched');
+      assert.equal(settings.config.dailyWithinDays, 7, 'and email chases on the same week');
 
       // Asking it to send anyway is refused with the reason, not a silent no-op.
       const refused = await admin.post('/api/reminders/whatsapp/run', { force: true });

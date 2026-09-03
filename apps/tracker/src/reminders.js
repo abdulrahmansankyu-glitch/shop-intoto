@@ -8,9 +8,10 @@
  * reminder that arrives daily regardless of urgency stops being read at all.
  * The rest of the month therefore goes out once a week.
  *
- * Two channels run on those bands with their own idea of "close": email at
- * fifteen days, WhatsApp at seven. `planRun` plans the email, `planWhatsappRun`
- * the WhatsApp messages, and both sit on the same `collectItems`.
+ * Both channels run on those bands, and both treat "close" as a week or less:
+ * anything falling due within seven days is chased every morning. `planRun`
+ * plans the email, `planWhatsappRun` the WhatsApp messages, and both sit on the
+ * same `collectItems`.
  *
  * This module is deliberately free of Node built-ins, of storage and of the
  * transports: it takes records, accounts and a date, and returns the exact set
@@ -41,13 +42,13 @@ export const WEEKDAYS = [
 ];
 
 /**
- * WhatsApp keeps its own thresholds.
+ * WhatsApp keeps its own thresholds, even though both channels now start
+ * chasing daily at a week.
  *
- * The team asked for a month's warning over WhatsApp and then a message once a
- * week remains — a tighter daily band than the email's fifteen days. That is the
- * right way round: an email is read when it is opened, a WhatsApp message
- * interrupts, and a channel that interrupts every morning about something three
- * weeks away is a channel that gets muted.
+ * They stay separate settings because the two are not interchangeable: an email
+ * is read when it is opened, a WhatsApp message interrupts. If the daily band is
+ * ever widened again, it should be widened on the channel that can carry it
+ * without being muted — and that is email, not WhatsApp.
  */
 export const DEFAULT_WHATSAPP_CONFIG = {
   enabled: false,
@@ -61,6 +62,10 @@ export const DEFAULT_WHATSAPP_CONFIG = {
 /**
  * Defaults.
  *
+ * `dailyWithinDays` is a week: the team's rule is that anything falling due
+ * within seven days is chased every morning, and the remainder of the month is a
+ * once-a-week look-ahead rather than a daily one.
+ *
  * `weeklyOn` is Sunday because that is the first working day of the week on the
  * plant — the weekly look-ahead wants to land at the start of the week it
  * describes, not in the middle of it.
@@ -72,7 +77,7 @@ export const DEFAULT_WHATSAPP_CONFIG = {
 export const DEFAULT_REMINDER_CONFIG = {
   enabled: false,
   windowDays: DUE_SOON_DAYS,
-  dailyWithinDays: 15,
+  dailyWithinDays: 7,
   weeklyOn: 'Sunday',
   includeOverdue: true,
   sendWhenEmpty: false,
