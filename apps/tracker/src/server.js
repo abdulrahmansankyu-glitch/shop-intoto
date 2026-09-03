@@ -1076,14 +1076,37 @@ export async function createApp(env = process.env, overrides = {}) {
 
   // ---- Email reminders ----------------------------------------------------
 
+  /**
+   * The reminder settings, or a first-run default that follows the deployment.
+   *
+   * Off-by-default exists so a deploy never starts mailing a team that did not
+   * ask for it. But somebody who has gone to the trouble of configuring a mail
+   * account and the scheduler secret has asked for it, and the commoner failure
+   * by far is the one where all of that is set correctly and the system stays
+   * silent because of a switch nobody knew to find.
+   *
+   * So until the team saves the Settings screen even once, "enabled" follows
+   * what the environment can actually do: email when there is a working mail
+   * transport and a secret for the scheduler to present, WhatsApp only when a
+   * paid transport can send it unattended — the free link mode needs a person
+   * to tap send, so switching it on by itself would promise something no
+   * scheduled run can keep. The moment anybody saves, their choice is stored
+   * and this stops applying.
+   */
+  const firstRunConfig = () =>
+    normaliseConfig({
+      enabled: mailer.configured && Boolean(reminderSecret),
+      whatsapp: { enabled: whatsapp.configured },
+    });
+
   const loadReminderConfig = async () => {
     const raw = await store.getSetting('reminder_config');
+    if (!raw) return firstRunConfig();
     try {
-      return normaliseConfig(raw ? JSON.parse(raw) : {});
+      return normaliseConfig(JSON.parse(raw));
     } catch {
-      // Unparseable settings must not stop the app booting or the cron running;
-      // the defaults are safe because `enabled` is false among them.
-      return normaliseConfig({});
+      // Unparseable settings must not stop the app booting or the cron running.
+      return firstRunConfig();
     }
   };
 

@@ -1210,11 +1210,64 @@ test('the run endpoint is closed to callers with neither the secret nor an admin
         'admin session without the password confirmation',
       );
 
-      // Switched off is switched off, even for an authorised caller.
+      // Switched off is switched off, even for an authorised caller. It has to
+      // be saved explicitly here: with a working transport and a secret set,
+      // the first-run default is on, and this is the setting that overrides it.
+      await asAdmin().put('/api/reminders', { enabled: false });
       const off = await (await run({ 'x-reminder-secret': 'let-me-in' })).json();
       assert.equal(off.sent, 0);
       assert.match(off.skipped, /switched off/);
       assert.equal(mailer.outbox.length, 0);
+    },
+    { env: { TRACKER_REMINDER_SECRET: 'let-me-in' }, overrides: { mailer } },
+  );
+});
+
+test('a deployment with mail and a secret configured sends without anyone finding a switch', async () => {
+  // The failure this pins is the quiet one: every credential set correctly, the
+  // scheduler firing on time, and nothing arriving because reminders were still
+  // off. Nobody has saved the Settings screen here — the environment alone is
+  // what turns it on.
+  const mailer = fakeMailer();
+  await withAdmin(
+    async ({ base, asAdmin }) => {
+      await asAdmin().post('/api/records', {
+        register: 'iws',
+        data: {
+          iwsNumber: 'IWS-99',
+          description: 'Due inside the week',
+          targetDate: '2020-01-01',
+          actionBy: 'Abdul Rahman',
+        },
+      });
+
+      const sent = await (
+        await fetch(`${base}/api/reminders/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-reminder-secret': 'let-me-in' },
+          body: '{}',
+        })
+      ).json();
+
+      assert.equal(sent.skipped, undefined, 'not skipped for being switched off');
+      assert.ok(mailer.outbox.length >= 1, 'the overdue job reached somebody');
+    },
+    { env: { TRACKER_REMINDER_SECRET: 'let-me-in' }, overrides: { mailer } },
+  );
+});
+
+test('with no way to send, nothing switches itself on', async () => {
+  // The other half: no transport means the first-run default stays off, so a
+  // deployment that has not been configured cannot fail loudly every morning.
+  const mailer = { ...fakeMailer(), configured: false, problem: 'No mail account is configured.' };
+  await withAdmin(
+    async ({ base }) => {
+      const settings = await (await fetch(`${base}/api/reminders/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-reminder-secret': 'let-me-in' },
+        body: '{}',
+      })).json();
+      assert.match(settings.skipped, /switched off/);
     },
     { env: { TRACKER_REMINDER_SECRET: 'let-me-in' }, overrides: { mailer } },
   );

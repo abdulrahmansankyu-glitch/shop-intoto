@@ -478,6 +478,22 @@ A run refuses to repeat on a date it has already sent, so a cron that
 double-fires cannot send the team the same digest twice. **Send now** in Settings
 overrides that, because that is what pressing it means.
 
+### Switching on
+
+There is no separate switch to remember. Until somebody saves the Settings
+screen, reminders follow what the deployment can actually do: email sends once
+there is a working mail transport **and** `TRACKER_REMINDER_SECRET` is set, and
+stays off when there is not. WhatsApp switches itself on only for a paid
+transport that can send unattended — the free link mode needs a person to tap
+send, so turning it on by itself would promise something no scheduled run keeps.
+
+The off-by-default rule it replaces was protecting against a deploy that starts
+mailing a team who never asked. Setting a mail account and a scheduler secret is
+not something done by accident, and the commoner failure was the opposite one:
+every credential correct, the cron firing on time, and nothing arriving because
+of a checkbox nobody knew to find. Saving the Settings screen stores an explicit
+choice and this stops applying.
+
 Set `TZ` on the host to the plant's timezone. "Due today" is otherwise today in
 UTC, and a run just after local midnight would work from yesterday's date.
 
