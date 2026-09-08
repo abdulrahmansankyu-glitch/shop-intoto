@@ -11,7 +11,18 @@
  * in Node 18+ and in browsers on a secure origin.
  */
 
-import { CLOSED_STATUSES, DUE_SOON_DAYS, PRIORITY_VALUES, REGISTERS, daysUntil, dueState } from './registers.js';
+import {
+  CLOSED_STATUSES,
+  DUE_SOON_DAYS,
+  PRIORITY_VALUES,
+  REGISTERS,
+  REGISTER_BY_ID,
+  VERDICTS,
+  VERDICT_REGISTERS,
+  daysUntil,
+  dueState,
+  normaliseVerdict,
+} from './registers.js';
 
 /** Shape a stored row (either backend) into the JSON the API serves. */
 export function toApi(row) {
@@ -162,6 +173,8 @@ function matches(record, q) {
   // `open` is the default working view: anything nobody has closed out.
   if (q.open && CLOSED_STATUSES.has(record.status)) return false;
 
+  if ((q.from || q.to) && !withinDates(record, q)) return false;
+
   if (q.due) {
     const closed = CLOSED_STATUSES.has(record.status);
     const days = record.dueDate ? daysUntil(record.dueDate) : null;
@@ -174,6 +187,39 @@ function matches(record, q) {
   }
 
   return true;
+}
+
+/**
+ * Which date a range filter is asking about.
+ *
+ * Three answers rather than one, because the registers genuinely disagree about
+ * what a record's date is. An IWS scope has a target date and that is what
+ * "September" means for it. A quality audit has no target date at all — it
+ * records something that already happened — so for that register the only date
+ * is the one it was raised on. Forcing either register into the other's answer
+ * makes the filter silently empty.
+ *
+ *  * `due`    — the target date alone. Undated rows drop out.
+ *  * `issued` — the date it was raised or the audit was done.
+ *  * `any`    — either one inside the range. The default, since it is the only
+ *               answer that cannot empty a table by accident.
+ */
+export const DATE_FIELDS = ['due', 'issued', 'any'];
+
+/** Whether a record falls inside `from`..`to` on the chosen date. */
+export function withinDates(record, { from, to, dateField }) {
+  const inRange = (value) => {
+    if (!value) return false;
+    // Both ends inclusive: a range typed as 1–30 September is read by everybody
+    // as including the thirtieth.
+    if (from && value < from) return false;
+    if (to && value > to) return false;
+    return true;
+  };
+
+  if (dateField === 'issued') return inRange(record.issuedDate);
+  if (dateField === 'due') return inRange(record.dueDate);
+  return inRange(record.dueDate) || inRange(record.issuedDate);
 }
 
 /**
@@ -226,6 +272,12 @@ export function applyQuery(records, query = {}) {
     area: asArray(query.area),
     due: query.due || null,
     open: query.open === true || query.open === 'true',
+    from: asDate(query.from),
+    to: asDate(query.to),
+    // `any` when nobody said. Defaulting to the due date silently empties a
+    // register that has no due column — Quality Audit has none at all — and an
+    // empty table is the one answer a filter must never give by accident.
+    dateField: DATE_FIELDS.includes(query.dateField) ? query.dateField : 'any',
   };
 
   const filtered = records.filter((r) => matches(r, q));
@@ -243,6 +295,19 @@ export function applyQuery(records, query = {}) {
   return { rows: filtered.slice(start, start + pageSize), total, page, pageSize, pageCount };
 }
 
+/**
+ * A `YYYY-MM-DD` from the query string, or null.
+ *
+ * Strict on purpose. Dates are compared as strings — which is exactly right for
+ * this format and only this format — so a half-typed `2026-09` sliding through
+ * would compare as less than every real date in September and silently empty
+ * the table while the box looks filled in.
+ */
+function asDate(value) {
+  const raw = String(value ?? '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
 function asArray(value) {
   if (value === undefined || value === null || value === '') return null;
   const list = (Array.isArray(value) ? value : String(value).split(','))
@@ -258,6 +323,56 @@ function clampInt(value, min, max, fallback) {
 }
 
 // --------------------------------------------------------------- dashboard --
+
+/**
+ * The audit figures: how many were done, and how they came out.
+ *
+ * A separate count from open/closed/overdue and not a substitute for it. An
+ * audit is not work waiting to be done, so counting audits in the overdue
+ * figures answers nothing; what the team reports at the end of a month is how
+ * many audits were carried out and how many of them found a problem.
+ *
+ * `unclassified` is shown rather than folded into either side. A row where
+ * nobody filled the verdict in has not been judged, and quietly counting it as
+ * compliant would flatter the very number the register exists to report.
+ *
+ * Written to work for any register that declares a `verdict` role, so a second
+ * kind of audit is a change to `registers.js` and nothing here.
+ */
+export function verdictSummary(records) {
+  const ids = new Set(VERDICT_REGISTERS.map((r) => r.id));
+  const rows = records.filter((r) => ids.has(r.register));
+
+  const verdictOf = (row) =>
+    normaliseVerdict(row.data?.[REGISTER_BY_ID.get(row.register)?.roles?.verdict]);
+
+  const counts = Object.fromEntries(VERDICTS.map((v) => [v, 0]));
+  let unclassified = 0;
+  for (const row of rows) {
+    const verdict = verdictOf(row);
+    if (verdict) counts[verdict] += 1;
+    else unclassified += 1;
+  }
+
+  const compliance = counts.Compliance;
+  const nonCompliance = counts['Non compliance'];
+  const judged = compliance + nonCompliance;
+
+  return {
+    registers: VERDICT_REGISTERS.map((r) => r.id),
+    total: rows.length,
+    compliance,
+    nonCompliance,
+    unclassified,
+    // Out of the audits that reached a verdict, not out of all of them — a rate
+    // whose denominator includes rows nobody judged is not a compliance rate.
+    rate: judged ? Math.round((compliance / judged) * 1000) / 10 : null,
+    // Findings still open, which is the queue somebody has to work through.
+    openFindings: rows.filter(
+      (r) => verdictOf(r) === 'Non compliance' && !CLOSED_STATUSES.has(r.status),
+    ).length,
+  };
+}
 
 /** Everything the dashboard shows, computed in one pass over the records. */
 export function summarise(records) {
@@ -340,6 +455,7 @@ export function summarise(records) {
         dueSoon: rows.filter((r) => state(r) === 'due-soon').length,
       };
     }),
+    quality: verdictSummary(records),
     byActionBy: tally(open, 'actionBy').slice(0, 12),
     byInitiator: tally(open, 'initiator').slice(0, 12),
     dueBuckets: buckets,

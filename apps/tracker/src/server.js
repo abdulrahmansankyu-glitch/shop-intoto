@@ -51,7 +51,7 @@ import {
 } from './reminders.js';
 import { createWhatsapp } from './whatsapp.js';
 import { normalisePhone } from './phone.js';
-import { sanitiseData, summarise } from './query.js';
+import { DATE_FIELDS, sanitiseData, summarise, withinDates } from './query.js';
 import {
   calendarOf,
   currentWeek,
@@ -735,8 +735,25 @@ export async function createApp(env = process.env, overrides = {}) {
     try {
       const registerFilter = req.query.register || null;
       if (registerFilter && !allowRegister(req, res, registerFilter)) return;
-      const records = scopeRecords(req, await store.all(registerFilter));
-      const summary = summarise(records);
+      const all = scopeRecords(req, await store.all(registerFilter));
+
+      /**
+       * The date range, applied before anything is counted.
+       *
+       * `any` by default: the dashboard spans every register at once, and the
+       * registers do not agree about what a row's date is — a work scope has a
+       * target date, a quality audit only has the day it was carried out.
+       * Matching on either keeps both kinds in a range that means "this month".
+       */
+      const range = {
+        from: /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from ?? '')) ? String(req.query.from) : null,
+        to: /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to ?? '')) ? String(req.query.to) : null,
+        dateField: DATE_FIELDS.includes(req.query.dateField) ? req.query.dateField : 'any',
+      };
+
+      const filtered =
+        range.from || range.to ? all.filter((r) => withinDates(r, range)) : all;
+      const summary = summarise(filtered);
 
       // A restricted account gets cards only for its own registers. Leaving the
       // others in showed a row of empty rings for work the reader cannot open,
@@ -749,6 +766,10 @@ export async function createApp(env = process.env, overrides = {}) {
         // the reader may not see is one screenshot of the network tab away from
         // not being hidden at all.
         activity: maySeeActivity(req) ? await store.recentActivity(15) : [],
+        // Echoed back with the count it left out, so a narrowed dashboard can
+        // say so. A filter that quietly drops the undated half of the registers
+        // looks identical to a register that has emptied.
+        dateFilter: { ...range, matched: filtered.length, excluded: all.length - filtered.length },
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {

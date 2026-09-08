@@ -221,9 +221,20 @@ globalThis.__trackerLocalApi = async function localApi(path, options = {}) {
     // ---- dashboard --------------------------------------------------------
 
     if (pathname === '/api/dashboard') {
+      const all = asRecords(params.get('register'));
+      // The same range the served app applies, so the offline copy and the
+      // shared one cannot disagree about what a period contains.
+      const range = {
+        from: params.get('from') ?? null,
+        to: params.get('to') ?? null,
+        dateField: DATE_FIELDS.includes(params.get('dateField')) ? params.get('dateField') : 'any',
+      };
+      const records = range.from || range.to ? all.filter((r) => withinDates(r, range)) : all;
+
       return json({
-        ...summarise(asRecords(params.get('register'))),
+        ...summarise(records),
         activity: state.activity.slice(0, 15),
+        dateFilter: { ...range, matched: records.length, excluded: all.length - records.length },
         generatedAt: new Date().toISOString(),
       });
     }

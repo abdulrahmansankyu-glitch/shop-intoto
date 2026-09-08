@@ -27,6 +27,7 @@ import {
   exportTitle,
   getRegister,
   normaliseKey,
+  toClockTime,
   toDateOnly,
 } from './registers.js';
 
@@ -299,6 +300,8 @@ export function extractRows(worksheet, register, header = null) {
       } else if (type === 'number') {
         const n = Number(raw);
         value = Number.isFinite(n) ? n : String(raw);
+      } else if (type === 'time') {
+        value = toClockTime(raw);
       } else if (type === 'percent') {
         // Excel's `0%` format stores 90% as 0.9. Anything above 1 is already a
         // percentage — so a sheet holding a plain 90 is read correctly too.
@@ -335,11 +338,24 @@ export function extractRows(worksheet, register, header = null) {
       hasIdentity = true;
     }
 
+    // A row holding nothing the app reads is as empty as one with no cells at
+    // all, and is held back on the same terms.
+    //
+    // Excel disagrees: a row inside a bordered table has cells, so `cellCount`
+    // is not zero, and the Quality Audit sheet's ten ruled-but-blank rows below
+    // the data reported as "3 imported, 18 skipped" — a number that reads like
+    // a mapping failure. What decides emptiness is whether any column the app
+    // reads held a value, not whether somebody drew a border.
+    if (!hasValue) {
+      pendingSkipped += 1;
+      continue;
+    }
+
     // A row that held something and was still rejected always counts. That is
-    // the number worth reporting — the Action Notice sheet's dozen rows holding
-    // only a serial number, the QC sheet's four stray totals. Somebody should
-    // be told those were passed over.
-    if (!hasValue || !hasIdentity) {
+    // the number worth reporting — the QC sheet's four stray totals, a row with
+    // a quality figure and no work order. Somebody should be told those were
+    // passed over.
+    if (!hasIdentity) {
       skipped += 1;
       continue;
     }

@@ -506,6 +506,12 @@ label.field > span {
   color: var(--ink);
 }
 
+/* Compliance figures. Green carries real meaning here — a compliant audit is a
+   job done correctly — where elsewhere on the dashboard it only means "closed". */
+.kpi.is-good .k-value {
+  color: var(--good);
+}
+
 .dot {
   width: 9px;
   height: 9px;

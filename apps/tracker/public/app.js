@@ -85,6 +85,44 @@ function fmtWhen(iso) {
   return then.toISOString().slice(0, 10);
 }
 
+// --------------------------------------------------------- date ranges --
+
+const RANGE_KEY = 'tracker.dashboardRange';
+const EMPTY_RANGE = { from: '', to: '', dateField: 'any' };
+
+/**
+ * The saved dashboard range.
+ *
+ * Wrapped in try/catch and validated rather than trusted: `localStorage` throws
+ * outright in a browser set to block site data, and a half-written value there
+ * would otherwise take the dashboard down on load — before there is any screen
+ * to show the error on.
+ */
+function readRange() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(RANGE_KEY) ?? '{}');
+    const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '')) ? String(v) : '');
+    return {
+      from: iso(saved.from),
+      to: iso(saved.to),
+      dateField: ['due', 'issued', 'any'].includes(saved.dateField) ? saved.dateField : 'any',
+    };
+  } catch {
+    return { ...EMPTY_RANGE };
+  }
+}
+
+function writeRange(range) {
+  try {
+    localStorage.setItem(RANGE_KEY, JSON.stringify(range));
+  } catch {
+    // A browser blocking site data is not a reason to refuse to filter; the
+    // range simply lasts as long as the tab does.
+  }
+}
+
+const rangeIsSet = (range = state.range) => Boolean(range.from || range.to);
+
 // ------------------------------------------------------------------ state --
 
 const state = {
@@ -108,6 +146,15 @@ const state = {
   theme: localStorage.getItem('tracker.theme') ?? 'auto',
   gate: null, // 'setup' | 'login' | 'name' | null
   dashboard: null,
+  /**
+   * The dashboard's date range.
+   *
+   * Remembered across refreshes, because somebody who works in monthly windows
+   * would otherwise retype it every visit. A remembered filter can also make an
+   * empty dashboard look like an empty database, so whenever one is set the
+   * screen says so in a banner with a Clear button — see `renderDateRange`.
+   */
+  range: readRange(),
   list: null,
   filterOptions: { actionBy: [], initiator: [], area: [] },
   query: {},
@@ -130,6 +177,12 @@ const defaultQuery = () => ({
   status: '',
   actionBy: '',
   due: '',
+  from: '',
+  to: '',
+  // Which date a range means. `any` — either of the register's dates — because
+  // it is the only default that cannot empty the table by accident: Quality
+  // Audit keeps no target date, so defaulting to that would match nothing.
+  dateField: 'any',
   open: true,
   sort: 'dueDate',
   direction: 'asc',
@@ -396,7 +449,12 @@ async function loadDashboard() {
   state.busy = true;
   render();
   try {
-    state.dashboard = await api('/api/dashboard');
+    const params = new URLSearchParams();
+    if (state.range.from) params.set('from', state.range.from);
+    if (state.range.to) params.set('to', state.range.to);
+    if (rangeIsSet()) params.set('dateField', state.range.dateField);
+    const query = params.toString();
+    state.dashboard = await api(`/api/dashboard${query ? `?${query}` : ''}`);
     state.error = null;
   } catch (error) {
     state.error = error.message;
@@ -1541,6 +1599,204 @@ function render3dLandscape(rows) {
   );
 }
 
+/**
+ * Month boundaries, in the plain `YYYY-MM-DD` the API compares on.
+ *
+ * Built from the local calendar rather than `toISOString()`, which converts to
+ * UTC first: east of Greenwich that turns the first of the month into the last
+ * day of the previous one, and a preset called "This month" would start a day
+ * early every time.
+ */
+const isoDay = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const RANGE_PRESETS = [
+  {
+    label: 'This month',
+    of: (now) => [
+      isoDay(new Date(now.getFullYear(), now.getMonth(), 1)),
+      isoDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    ],
+  },
+  {
+    label: 'Last month',
+    of: (now) => [
+      isoDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+      isoDay(new Date(now.getFullYear(), now.getMonth(), 0)),
+    ],
+  },
+  {
+    label: 'Last 90 days',
+    of: (now) => [isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 89)), isoDay(now)],
+  },
+  {
+    label: 'This year',
+    of: (now) => [isoDay(new Date(now.getFullYear(), 0, 1)), isoDay(new Date(now.getFullYear(), 11, 31))],
+  },
+];
+
+const DATE_FIELD_LABELS = {
+  any: 'Either date',
+  due: 'Due / target date',
+  issued: 'Date raised',
+};
+
+/**
+ * The dashboard's date range.
+ *
+ * Three controls and a row of presets: which date to read, and the two ends.
+ * The "which date" question cannot be avoided, because the registers do not
+ * agree on the answer — a work scope is planned around its target date, while a
+ * quality audit has no target date at all and only knows the day it was carried
+ * out. `Either` is the default so that one range covers both.
+ */
+function renderDateRange(data) {
+  const set = (patch) => {
+    state.range = { ...state.range, ...patch };
+    writeRange(state.range);
+    loadDashboard();
+  };
+
+  const dateInput = (key, label) =>
+    h(
+      'label',
+      { class: 'field' },
+      h('span', null, label),
+      h('input', {
+        type: 'date',
+        value: state.range[key],
+        onchange: (e) => set({ [key]: e.target.value }),
+      }),
+    );
+
+  const now = new Date();
+  const active = rangeIsSet();
+
+  return h(
+    'section',
+    { class: 'card' },
+    h(
+      'header',
+      null,
+      h('h2', null, 'Period'),
+      h(
+        'span',
+        { class: 'hint' },
+        active
+          ? `${state.range.from || 'the beginning'} → ${state.range.to || 'today'} · ${DATE_FIELD_LABELS[
+              state.range.dateField
+            ].toLowerCase()}`
+          : 'all dates',
+      ),
+    ),
+    h(
+      'div',
+      { class: 'toolbar' },
+      dateInput('from', 'From'),
+      dateInput('to', 'To'),
+      h(
+        'label',
+        { class: 'field' },
+        h('span', null, 'Count by'),
+        h(
+          'select',
+          { onchange: (e) => set({ dateField: e.target.value }) },
+          Object.entries(DATE_FIELD_LABELS).map(([value, label]) =>
+            h('option', { value, selected: state.range.dateField === value }, label),
+          ),
+        ),
+      ),
+      h('div', { class: 'spacer' }),
+      ...RANGE_PRESETS.map((preset) =>
+        h(
+          'button',
+          {
+            class: 'btn sm',
+            type: 'button',
+            onclick: () => {
+              const [from, to] = preset.of(now);
+              set({ from, to });
+            },
+          },
+          preset.label,
+        ),
+      ),
+      active &&
+        h(
+          'button',
+          { class: 'btn sm', type: 'button', onclick: () => set({ ...EMPTY_RANGE }) },
+          'Clear',
+        ),
+    ),
+
+    // A filter that is remembered across refreshes is a filter somebody will
+    // forget they set. An empty dashboard has to say "you narrowed it" rather
+    // than looking like an empty database.
+    active
+      ? h(
+          'div',
+          { class: 'banner info', style: 'margin-top: 12px' },
+          `Showing ${data.dateFilter?.matched ?? 0} of ${
+            (data.dateFilter?.matched ?? 0) + (data.dateFilter?.excluded ?? 0)
+          } entries. Every figure below counts only this period.`,
+          data.dateFilter?.excluded
+            ? ` ${data.dateFilter.excluded} fall outside it, or carry no date to compare.`
+            : '',
+        )
+      : null,
+  );
+}
+
+/**
+ * Audits, and how they came out.
+ *
+ * The figure the team reports at the end of a month, and not one the
+ * open/overdue counts can answer: an audit is a finding about work already
+ * done, not work waiting to be done. Hidden entirely until there are audits, so
+ * a department that does not run them is not shown an empty card forever.
+ */
+function renderQuality(quality) {
+  if (!quality?.total) return null;
+
+  return h(
+    'section',
+    { class: 'card' },
+    h(
+      'header',
+      null,
+      h('h2', null, 'Quality audits'),
+      h(
+        'span',
+        { class: 'hint' },
+        quality.rate === null ? 'no verdict recorded yet' : `${quality.rate}% compliant`,
+      ),
+    ),
+    h(
+      'div',
+      { class: 'kpis' },
+      kpi('Audits', quality.total, 'carried out'),
+      kpi('Compliance', quality.compliance, 'found correct', quality.compliance ? 'is-good' : null),
+      kpi(
+        'Non-compliance',
+        quality.nonCompliance,
+        'findings raised',
+        quality.nonCompliance ? 'is-critical' : null,
+      ),
+      kpi(
+        'Still open',
+        quality.openFindings,
+        'findings not closed out',
+        quality.openFindings ? 'is-warning' : null,
+      ),
+      // Shown only when it exists. A permanent "0 not judged" is noise; a
+      // non-zero one is a column somebody forgot to fill in.
+      quality.unclassified
+        ? kpi('No verdict', quality.unclassified, 'column left blank')
+        : null,
+    ),
+  );
+}
+
 function renderDashboard() {
   const data = state.dashboard;
   if (!data) return h('div', { class: 'empty' }, h('span', { class: 'spin' }), ' Loading…');
@@ -1550,6 +1806,8 @@ function renderDashboard() {
   return h(
     'div',
     { class: 'content' },
+
+    renderDateRange(data),
 
     h(
       'div',
@@ -1565,6 +1823,8 @@ function renderDashboard() {
       kpi('Completed', t.completed, 'finished, not cancelled'),
       kpi('Overdue', t.overdue, 'past their due date', t.overdue > 0 ? 'is-critical' : null),
     ),
+
+    renderQuality(data.quality),
 
     render3dLandscape(data.byRegister),
 
@@ -1711,6 +1971,65 @@ const activityItem = (entry) =>
 
 // ---------------------------------------------------------------- register --
 
+/**
+ * From / To, plus which of this register's dates they mean.
+ *
+ * The choice is offered only where there is one to make: a register with both a
+ * target date and a raised date gets a select naming both in the register's own
+ * words, and one with a single date gets no select at all — a dropdown with one
+ * option is a question with no answer.
+ */
+function dateRangeFilters(register, q, setQuery) {
+  const labelOf = (role) =>
+    register.fields.find((f) => f.key === register.roles?.[role])?.label ?? null;
+
+  const dueLabel = labelOf('due');
+  const issuedLabel = labelOf('issued');
+
+  const choices = [
+    dueLabel && { value: 'due', label: dueLabel },
+    issuedLabel && { value: 'issued', label: issuedLabel },
+    dueLabel && issuedLabel && { value: 'any', label: 'Either' },
+  ].filter(Boolean);
+
+  // A register with neither is not filterable by date, and showing two boxes
+  // that can only ever empty the table would be worse than showing none.
+  if (!choices.length) return [];
+
+  // A register keeping only one date has no `any` to fall back on, so the
+  // stored default is narrowed to the date it does keep.
+  const field = choices.some((c) => c.value === q.dateField) ? q.dateField : choices[0].value;
+
+  const dateInput = (key, label) =>
+    h(
+      'label',
+      { class: 'field' },
+      h('span', null, label),
+      h('input', {
+        type: 'date',
+        value: q[key] ?? '',
+        style: 'min-width: 140px',
+        onchange: (e) => setQuery({ [key]: e.target.value, dateField: field }),
+      }),
+    );
+
+  return [
+    choices.length > 1 &&
+      h(
+        'label',
+        { class: 'field' },
+        h('span', null, 'Date'),
+        h(
+          'select',
+          { onchange: (e) => setQuery({ dateField: e.target.value }) },
+          choices.map((c) => h('option', { value: c.value, selected: field === c.value }, c.label)),
+        ),
+      ),
+    dateInput('from', choices.length > 1 ? 'From' : `${choices[0].label} from`),
+    dateInput('to', 'To'),
+  ].filter(Boolean);
+}
+
 let searchTimer = null;
 
 function renderRegister() {
@@ -1833,6 +2152,14 @@ function renderRegister() {
         ],
         'Any time',
       ),
+
+      // A date range, named after this register's own columns.
+      //
+      // "Target Date" and "Date Issued" on IWS, "ETC" and "Date" on Action
+      // Notice, "Date" alone on Quality Audit — reading the labels off the
+      // register beats a generic "due date" that half the registers do not
+      // call that.
+      ...dateRangeFilters(register, q, setQuery),
       h(
         'label',
         { class: 'switch', style: 'padding-bottom: 8px' },

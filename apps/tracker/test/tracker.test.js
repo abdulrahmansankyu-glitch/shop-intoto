@@ -32,6 +32,8 @@ import {
   getRegister,
   normalisePriority,
   normaliseStatus,
+  normaliseVerdict,
+  toClockTime,
   toDateOnly,
   todayIso,
 } from '../src/registers.js';
@@ -65,6 +67,7 @@ import { displayPhone, normalisePhone } from '../src/phone.js';
 import { createWhatsapp, explainCloudFailure, whatsappLink } from '../src/whatsapp.js';
 import { createApp, summarise } from '../src/server.js';
 import { applyQuery, toApi, toRow } from '../src/store.js';
+import { verdictSummary, withinDates } from '../src/query.js';
 
 /** A stored record as the exporter sees one: derived fields plus its own data. */
 function deriveAll(register, data) {
@@ -207,7 +210,13 @@ test('pre-numbered empty rows are not imported as jobs', async () => {
 
   const { rows, skipped } = extractRows(sheet, getRegister('action-notice'));
   assert.equal(rows.length, 1);
-  assert.equal(skipped, 2);
+  // Not reported as skipped. The serial column is not a column the app reads,
+  // so these rows held nothing at all — and rows holding nothing, at the end of
+  // a sheet, are the template waiting for next month rather than data that was
+  // passed over. The Quality Audit sheet made the difference plain: its ten
+  // ruled-but-blank rows read as "3 imported, 18 skipped", which looks like a
+  // mapping failure.
+  assert.equal(skipped, 0);
   assert.equal(rows[0].documentNo, 'PA-2607-08');
   // The serial column is a position, not data, so it is not stored at all.
   assert.ok(!Object.keys(rows[0]).some((key) => key.toLowerCase().includes('sl')));
@@ -2492,4 +2501,263 @@ test('a WhatsApp failure for one person does not cost everybody else theirs', as
       assert.match(result.failed[0].error, /allow-list/);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Quality audits
+// ---------------------------------------------------------------------------
+
+const QA_HEADERS = [
+  'sl no',
+  'Date',
+  'Time',
+  'Area',
+  'PM work order ',
+  'CM  work order ',
+  'Permit Type',
+  'Permit Number ',
+  'Equipment ',
+  'Quality audit ',
+  'Quality Observation',
+  'Auditor ',
+  'Remarks',
+];
+
+test('the quality audit sheet maps whole, times and all', async () => {
+  // Headings straight from the team's file, double spaces and trailing spaces
+  // included — those are what a real workbook carries and what the alias
+  // matching has to survive.
+  const sheet = await sheetFrom([
+    ['PM/CM Quality Audit '],
+    QA_HEADERS,
+    [
+      1,
+      new Date(Date.UTC(2026, 8, 8)),
+      // Excel has no time-only type: 09:00 is stored as a moment on its epoch,
+      // 30 December 1899. Read as a date it becomes "1899-12-30".
+      new Date(Date.UTC(1899, 11, 30, 9, 0)),
+      'SHP',
+      830000583696,
+      '',
+      'cold',
+      '1/1060853',
+      'Hot oil pump',
+      'Non compliance ',
+      'Pump bearing temperature not taken',
+      'Rehan ',
+      'Because it was isolated',
+    ],
+    [2, new Date(Date.UTC(2026, 8, 6)), '', 'DCU', '', '', 'Hot', '2/1250748', 'Jet pump B', 'Compliance', 'Permit correct', 'Rehan', ''],
+  ]);
+
+  assert.equal(suggestRegister(sheet).register.id, 'quality-audit');
+
+  const register = getRegister('quality-audit');
+  const { rows } = extractRows(sheet, register);
+  assert.equal(rows.length, 2);
+
+  assert.equal(rows[0].date, '2026-09-08');
+  assert.equal(rows[0].time, '09:00', 'the clock survives, not 1899-12-30');
+  assert.equal(rows[0].pmWorkOrder, '830000583696', 'a work order is an identifier, not arithmetic');
+  assert.equal(rows[0].permitNumber, '1/1060853');
+  assert.equal(rows[0].verdict, 'Non compliance');
+  assert.equal(rows[0].auditor, 'Rehan');
+
+  // The serial column is a position, not data.
+  assert.ok(!Object.keys(rows[0]).some((k) => k.toLowerCase().startsWith('sl')));
+});
+
+test('a clock time is read from whatever the cell holds', () => {
+  assert.equal(toClockTime(new Date(Date.UTC(1899, 11, 30, 9, 0))), '09:00');
+  assert.equal(toClockTime(new Date(Date.UTC(1899, 11, 30, 21, 30))), '21:30');
+  // The fraction of a day underneath the formatting.
+  assert.equal(toClockTime(0.375), '09:00');
+  assert.equal(toClockTime('9:00'), '09:00');
+  assert.equal(toClockTime('2:15 PM'), '14:15');
+  assert.equal(toClockTime('12:30 AM'), '00:30');
+  // A note in a time column is information, not a parse failure to discard.
+  assert.equal(toClockTime('night shift'), 'night shift');
+  assert.equal(toClockTime(''), null);
+});
+
+test('a compliant audit closes itself; a finding stays open until somebody closes it', () => {
+  const register = getRegister('quality-audit');
+  const statusOf = (data) => deriveRecord(register, data).status;
+
+  // The sheet has no status column. Defaulting every row to "Not Started" would
+  // fill the register with hundreds of jobs nobody can ever close — there is no
+  // work to do about a job that was done correctly.
+  assert.equal(statusOf({ verdict: 'Compliance' }), 'Completed');
+  assert.equal(statusOf({ verdict: 'Non compliance' }), 'In Progress');
+
+  // "noncompliance" contains "compliance", so the order of the two rules is the
+  // whole test: reading a finding as a clean audit is the expensive mistake.
+  assert.equal(statusOf({ verdict: 'Non-Compliant' }), 'In Progress');
+
+  // An explicit status always wins — closing a finding out is a real event.
+  assert.equal(statusOf({ verdict: 'Non compliance', status: 'Completed' }), 'Completed');
+
+  // And the verdict is this register's only urgency signal.
+  assert.equal(deriveRecord(register, { verdict: 'Non compliance' }).priority, 'High');
+  assert.equal(
+    deriveRecord(register, { verdict: 'Compliance' }).priority,
+    'Low',
+    'not Medium — the default would colour every clean audit in an export',
+  );
+
+  // The auditor found it; somebody else fixes it.
+  assert.equal(deriveRecord(register, { auditor: 'Rehan' }).initiator, 'Rehan');
+  assert.equal(deriveRecord(register, { auditor: 'Rehan' }).actionBy, null);
+});
+
+test('a blank verdict is counted as unjudged, not as compliant', () => {
+  const audit = (verdict, status) => ({
+    id: `a${Math.random()}`,
+    register: 'quality-audit',
+    data: verdict ? { verdict } : {},
+    status: status ?? (verdict === 'Compliance' ? 'Completed' : 'In Progress'),
+  });
+
+  const summary = verdictSummary([
+    audit('Compliance'),
+    audit('Compliance'),
+    audit('Compliance'),
+    audit('Non compliance'),
+    audit('Non compliance', 'Completed'),
+    audit(null),
+    // A row from another register never lands in these figures.
+    { id: 'x', register: 'iws', data: {}, status: 'Not Started' },
+  ]);
+
+  assert.equal(summary.total, 6);
+  assert.equal(summary.compliance, 3);
+  assert.equal(summary.nonCompliance, 2);
+  assert.equal(summary.unclassified, 1, 'the blank one is named, not quietly counted as clean');
+  // 3 of the 5 that were judged. Counting the unjudged row in the denominator
+  // would report 50% and flatter nobody usefully.
+  assert.equal(summary.rate, 60);
+  assert.equal(summary.openFindings, 1, 'the closed-out finding is no longer a queue');
+});
+
+test('the verdict vocabulary takes the spellings a sheet actually uses', () => {
+  for (const yes of ['Compliance', 'compliant', 'COMPLIANCE ', 'Pass', 'Satisfactory']) {
+    assert.equal(normaliseVerdict(yes), 'Compliance', yes);
+  }
+  for (const no of ['Non compliance ', 'non-compliant', 'NC', 'Non Conformance', 'Fail']) {
+    assert.equal(normaliseVerdict(no), 'Non compliance', no);
+  }
+  // Not a verdict either way — and null is the honest answer for a blank cell.
+  assert.equal(normaliseVerdict('N/A'), null);
+  assert.equal(normaliseVerdict(''), null);
+});
+
+// ---------------------------------------------------------------------------
+// Date ranges
+// ---------------------------------------------------------------------------
+
+test('a date range asks about the date the register actually keeps', () => {
+  const scope = { id: 's', register: 'iws', dueDate: '2026-10-20', issuedDate: '2026-09-02' };
+  const audit = { id: 'a', register: 'quality-audit', dueDate: null, issuedDate: '2026-09-08' };
+
+  const september = { from: '2026-09-01', to: '2026-09-30' };
+
+  // The registers genuinely disagree about what a row's date is: a work scope is
+  // planned around its target date, an audit only knows the day it was done.
+  assert.equal(withinDates(scope, { ...september, dateField: 'due' }), false);
+  assert.equal(withinDates(scope, { ...september, dateField: 'issued' }), true);
+  assert.equal(withinDates(audit, { ...september, dateField: 'due' }), false, 'it has no target date at all');
+  assert.equal(withinDates(audit, { ...september, dateField: 'issued' }), true);
+
+  // Which is why the dashboard, spanning every register at once, matches either.
+  assert.equal(withinDates(scope, { ...september, dateField: 'any' }), true);
+  assert.equal(withinDates(audit, { ...september, dateField: 'any' }), true);
+
+  // Both ends inclusive — a range typed as 1–30 September includes the thirtieth.
+  assert.equal(withinDates({ id: 'l', dueDate: '2026-09-30' }, { ...september, dateField: 'due' }), true);
+  assert.equal(withinDates({ id: 'o', dueDate: '2026-10-01' }, { ...september, dateField: 'due' }), false);
+
+  // One open end is a valid range.
+  assert.equal(withinDates(scope, { from: '2026-10-01', to: '', dateField: 'due' }), true);
+  assert.equal(withinDates(scope, { from: '', to: '2026-09-30', dateField: 'due' }), false);
+});
+
+test('a half-typed date does not silently empty the table', () => {
+  const rows = [
+    { id: 'a', register: 'iws', dueDate: '2026-09-10', status: 'Not Started', priority: 'Medium', data: {} },
+    { id: 'b', register: 'iws', dueDate: '2026-11-10', status: 'Not Started', priority: 'Medium', data: {} },
+  ];
+
+  // Dates are compared as strings, which is exactly right for `YYYY-MM-DD` and
+  // only for that. A partial "2026-09" would compare below every real date in
+  // September and empty the table while the box still looked filled in.
+  assert.equal(applyQuery(rows, { from: '2026-09' }).total, 2, 'ignored, not applied');
+  assert.equal(applyQuery(rows, { from: 'yesterday' }).total, 2);
+  assert.equal(applyQuery(rows, { from: '2026-09-01', to: '2026-09-30' }).total, 1);
+});
+
+test('the dashboard narrows to a period and says what it left out', async () => {
+  await withAdmin(async ({ asAdmin }) => {
+    const admin = asAdmin();
+
+    for (const data of [
+      { date: '2026-09-08', area: 'SHP', equipment: 'Hot oil pump', verdict: 'Non compliance', auditor: 'Rehan' },
+      { date: '2026-09-06', area: 'DCU', equipment: 'Coke drum vent', verdict: 'Compliance', auditor: 'Rehan' },
+      { date: '2026-07-02', area: 'SHP', equipment: 'Conveyor CV-101', verdict: 'Compliance', auditor: 'Rehan' },
+    ]) {
+      await admin.post('/api/records', { register: 'quality-audit', data });
+    }
+    await admin.post('/api/records', {
+      register: 'iws',
+      data: { iwsNumber: 'IWS-77', description: 'Replace the actuator', issuedDate: '2026-08-01', targetDate: '2026-09-15' },
+    });
+
+    const all = await (await admin.get('/api/dashboard')).json();
+    assert.equal(all.quality.total, 3);
+    assert.equal(all.quality.compliance, 2);
+    assert.equal(all.quality.nonCompliance, 1);
+
+    const september = await (
+      await admin.get('/api/dashboard?from=2026-09-01&to=2026-09-30&dateField=any')
+    ).json();
+    assert.equal(september.quality.total, 2, 'July’s audit is outside the month');
+    assert.equal(september.quality.compliance, 1);
+    assert.equal(september.quality.nonCompliance, 1);
+    // The IWS scope joins on its target date even though it was raised in August.
+    assert.equal(september.dateFilter.matched, 3);
+    assert.equal(september.dateFilter.excluded, 1);
+
+    // Counting by the date each was raised instead moves the scope out and
+    // leaves the two September audits.
+    const raised = await (
+      await admin.get('/api/dashboard?from=2026-09-01&to=2026-09-30&dateField=issued')
+    ).json();
+    assert.equal(raised.dateFilter.matched, 2);
+  });
+});
+
+test('a register table can be narrowed to a period on either of its dates', async () => {
+  await withAdmin(async ({ asAdmin }) => {
+    const admin = asAdmin();
+
+    for (const [ref, issuedDate, targetDate] of [
+      ['IWS-77', '2026-08-01', '2026-09-15'],
+      ['IWS-78', '2026-09-02', '2026-10-20'],
+      ['IWS-79', '2026-07-11', '2026-08-05'],
+    ]) {
+      await admin.post('/api/records', {
+        register: 'iws',
+        data: { iwsNumber: ref, description: `Scope ${ref}`, issuedDate, targetDate },
+      });
+    }
+
+    const refs = async (query) =>
+      (await (await admin.get(`/api/records?register=iws&${query}`)).json()).rows.map((r) => r.ref);
+
+    assert.deepEqual(await refs('from=2026-09-01&to=2026-09-30&dateField=due'), ['IWS-77']);
+    assert.deepEqual(await refs('from=2026-09-01&to=2026-09-30&dateField=issued'), ['IWS-78']);
+    assert.deepEqual(await refs('from=2026-09-01&to=2026-09-30&dateField=any'), ['IWS-77', 'IWS-78']);
+    assert.deepEqual(await refs('from=2026-08-01&to=2026-08-31&dateField=due'), ['IWS-79']);
+    // No range is no filter.
+    assert.equal((await refs('open=true')).length, 3);
+  });
 });

@@ -1,5 +1,5 @@
 /**
- * The seven registers the engineering team tracks, and how each one maps onto a
+ * The nine registers the engineering team tracks, and how each one maps onto a
  * single shared shape.
  *
  * Every register keeps its own columns — an IWS row genuinely is not a PDM row, and
@@ -10,7 +10,7 @@
  * What makes a dashboard possible is `roles`: a per-register statement of which of
  * its own columns answers each cross-cutting question — what is this called, who
  * owns it, when is it due, how urgent is it. Derivation reads only `roles`, so
- * adding an eighth register is a data change here and nothing else anywhere.
+ * adding a tenth register is a data change here and nothing else anywhere.
  */
 
 /** Normalised priority ladder. Lower `rank` is more urgent. */
@@ -64,6 +64,15 @@ const PRIORITY_ALIASES = new Map(
     // the default rather than claiming a clean audit is low *priority*, which
     // would be a judgement the sheet never made.
     execution: 'High',
+    // The Quality Audit verdict is that register's only urgency signal: a
+    // non-compliance is something somebody has to answer for, a compliance is
+    // not. `Low` rather than nothing for the clean ones, because the default is
+    // Medium — and a shelf of compliant audits marked Medium would colour every
+    // one of them in an export and crowd out the findings that matter.
+    noncompliance: 'High',
+    noncompliant: 'High',
+    compliance: 'Low',
+    compliant: 'Low',
     orange: 'Medium',
     suspect: 'Medium',
     medium: 'Medium',
@@ -142,6 +151,19 @@ export function normalisePriority(value) {
  * expensive mistake of the two.
  */
 const STATUS_PHRASES = [
+  // A quality audit's verdict, where the register has no status column of its
+  // own. A non-compliance is open work until somebody closes it out; a
+  // compliance is finished the moment it is written down — there is nothing to
+  // do about a job that was done correctly, and leaving those "Not Started"
+  // would fill the register with hundreds of jobs nobody can ever close.
+  //
+  // Ordered before everything else because "noncompliance" contains
+  // "compliance", and reading a finding as a clean audit is the expensive
+  // mistake of the two.
+  // (Tested against the normalised key, which has already lost its spaces and
+  // hyphens — so one spelling covers "Non compliance" and "non-compliant".)
+  [/^noncompl/, 'In Progress'],
+  [/^compl(iance|iant)/, 'Completed'],
   // Still outstanding.
   [/\bnot(completed|done|attended|closed)/, 'In Progress'],
   [/tobe(attend|made|done|completed|carried|actioned)?/, 'In Progress'],
@@ -168,9 +190,65 @@ export function normaliseStatus(value) {
   return null;
 }
 
+/**
+ * The verdict a quality audit reaches.
+ *
+ * Its own small vocabulary rather than a status or a priority, because it is
+ * neither: an audit is not "in progress", and a compliance is not "low
+ * priority". It is a finding about work that has already been done, and the
+ * thing the team counts at the end of a month is how many of each there were.
+ */
+export const VERDICTS = ['Compliance', 'Non compliance'];
+
+const VERDICT_ALIASES = new Map(
+  Object.entries({
+    compliance: 'Compliance',
+    compliant: 'Compliance',
+    complied: 'Compliance',
+    conform: 'Compliance',
+    conforming: 'Compliance',
+    ok: 'Compliance',
+    pass: 'Compliance',
+    passed: 'Compliance',
+    satisfactory: 'Compliance',
+    noncompliance: 'Non compliance',
+    noncompliant: 'Non compliance',
+    notcompliance: 'Non compliance',
+    notcompliant: 'Non compliance',
+    nonconformance: 'Non compliance',
+    nonconformity: 'Non compliance',
+    nc: 'Non compliance',
+    fail: 'Non compliance',
+    failed: 'Non compliance',
+    observation: 'Non compliance',
+  }),
+);
+
+/**
+ * Free text from the sheet → one of the two verdicts, or null.
+ *
+ * Null is a real answer: a row where nobody filled the column in has not been
+ * judged either way, and counting it as compliant would flatter the figure the
+ * whole register exists to report.
+ */
+export function normaliseVerdict(value) {
+  const key = normaliseKey(value);
+  if (!key) return null;
+  return VERDICT_ALIASES.get(key) ?? null;
+}
+
 const text = (key, label, aliases = []) => ({ key, label, type: 'text', aliases });
 const longtext = (key, label, aliases = []) => ({ key, label, type: 'longtext', aliases });
 const date = (key, label, aliases = []) => ({ key, label, type: 'date', aliases });
+/**
+ * A clock time with no date attached — "09:00".
+ *
+ * Excel has no time-only type: a cell showing 09:00 holds a fraction of a day,
+ * which ExcelJS hands over as a `Date` on 30 December 1899. Read as an ordinary
+ * date it becomes "1899-12-30", which is how the audit times first imported.
+ * Typed as `time`, only the clock is kept.
+ */
+const time = (key, label, aliases = []) => ({ key, label, type: 'time', aliases });
 const number = (key, label, aliases = []) => ({ key, label, type: 'number', aliases });
 
 /**
@@ -609,7 +687,101 @@ export const REGISTERS = [
       discipline: 'workCenter',
     },
   },
+
+  /**
+   * PM/CM Quality Audit — field audits of maintenance work as it happens.
+   *
+   * An auditor walks the job, checks the permit against what is actually going
+   * on, and writes down one of two verdicts. That verdict is the point of the
+   * register, and it is why this one is shaped differently again from QC:
+   *
+   *  * **The verdict carries the status.** The sheet has no status column, and
+   *    inventing one that everything defaults to "Not Started" would fill the
+   *    register with jobs nobody can ever close — most audits find nothing
+   *    wrong, and there is no work to track in a job done correctly. So a
+   *    `Compliance` arrives closed and a `Non compliance` arrives open, through
+   *    the `statusFrom` role. The moment somebody sets the Status column on a
+   *    row, that wins: closing out a finding is a real event and has to be
+   *    recordable.
+   *  * **The verdict carries the urgency too.** A non-compliance is High; a
+   *    compliance is Low. There is no priority column to read instead.
+   *  * **The auditor is the initiator, not the owner.** They found it; somebody
+   *    else fixes it. `Action By` and `Target Date` are declared for that
+   *    somebody, empty until the team starts filling them in — at which point
+   *    these rows join the overdue counts and the reminders with no change here.
+   */
+  {
+    id: 'quality-audit',
+    name: 'Quality Audit',
+    short: 'QA',
+    exportTitle: 'Engineering PM/CM Quality Audit',
+    description: 'PM/CM quality audits of maintenance work in the field.',
+    sheetAliases: [
+      'quality audit',
+      'pm quality audit',
+      'pmcm quality audit',
+      'pm cm quality audit',
+      'pm/cm quality audit',
+      'field audit',
+      'compliance audit',
+    ],
+    tableColumns: ['date', 'time', 'area', 'permitNumber', 'equipment', 'verdict', 'observation', 'auditor'],
+    fields: [
+      date('date', 'Date', ['date', 'audit date']),
+      time('time', 'Time', ['time', 'audit time']),
+      select('area', 'Area', AREA_OPTIONS, ['area', 'plant', 'unit']),
+      // Two work-order columns, one filled per row: an audit is of either a
+      // planned job or a corrective one. Text rather than number — a twelve-digit
+      // order is an identifier, and nothing good comes of it being arithmetic.
+      text('pmWorkOrder', 'PM Work Order', ['pm work order', 'pm workorder', 'pm wo', 'pm order', 'pm']),
+      text('cmWorkOrder', 'CM Work Order', ['cm work order', 'cm workorder', 'cm wo', 'cm order', 'cm']),
+      text('permitType', 'Permit Type', ['permit type', 'type of permit', 'permit']),
+      text('permitNumber', 'Permit Number', ['permit number', 'permit no', 'permit num']),
+      text('equipment', 'Equipment', ['equipment', 'equipment tag', 'tag', 'tag no']),
+      select('verdict', 'Quality Audit', VERDICTS, [
+        'quality audit',
+        'audit result',
+        'result',
+        'compliance',
+        'finding',
+        'verdict',
+      ]),
+      longtext('observation', 'Quality Observation', [
+        'quality observation',
+        'observation',
+        'observations',
+        'audit observation',
+        'findings',
+      ]),
+      text('auditor', 'Auditor', ['auditor', 'audited by', 'inspector', 'audit by']),
+      longtext('remarks', 'Remarks', ['remarks', 'comment', 'comments', 'notes', 'action taken']),
+
+      // The close-out half. Not in today's sheet; declared so a finding can be
+      // followed to its end without a schema change the day the team wants to.
+      select('status', 'Status', STATUSES, ['status', 'action status', 'close out status']),
+      date('targetDate', 'Target Date', ['target date', 'due date', 'etc', 'completion date']),
+      text('actionBy', 'Action By', ['action by', 'responsible', 'owner', 'assigned to']),
+    ],
+    roles: {
+      ref: 'permitNumber',
+      title: 'observation',
+      due: 'targetDate',
+      issued: 'date',
+      status: 'status',
+      // Falls back to the verdict when nobody has set a status — see above.
+      statusFrom: 'verdict',
+      priority: 'verdict',
+      verdict: 'verdict',
+      actionBy: 'actionBy',
+      initiator: 'auditor',
+      area: 'area',
+      location: 'equipment',
+    },
+  },
 ];
+
+/** Registers that reach a compliance verdict, and the field holding it. */
+export const VERDICT_REGISTERS = REGISTERS.filter((r) => r.roles.verdict);
 
 /**
  * The heading across the top of an exported sheet.
@@ -686,6 +858,45 @@ export function toDateOnly(value) {
   return withinRange(parsed);
 }
 
+/**
+ * Coerce a cell to a clock time — `09:00` — or null.
+ *
+ * Excel has no time-only type. A cell showing 09:00 holds 0.375, a fraction of
+ * a day, and ExcelJS hands it over as a `Date` on 30 December 1899, its epoch.
+ * Read as an ordinary date that becomes "1899-12-30", which tells nobody when
+ * the audit happened.
+ *
+ * UTC accessors deliberately: the fraction is a wall-clock time with no zone,
+ * and reading it locally would shift 09:00 by however many hours the reader
+ * happens to be from UTC.
+ */
+export function toClockTime(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}`;
+  }
+
+  // A bare fraction of a day, which is what the cell holds underneath.
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const minutes = Math.round((value % 1) * 24 * 60);
+    return `${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}`;
+  }
+
+  const raw = String(value).trim();
+  // "9:00", "09:00 AM", "21:30". Anything else is left as written rather than
+  // guessed at — a note in a time column is still information.
+  const match = /^(\d{1,2})[:.](\d{2})\s*(am|pm)?/i.exec(raw);
+  if (!match) return raw || null;
+
+  let hours = Number(match[1]) % 24;
+  const meridiem = match[3]?.toLowerCase();
+  if (meridiem === 'pm' && hours < 12) hours += 12;
+  if (meridiem === 'am' && hours === 12) hours = 0;
+  return `${pad(hours)}:${match[2]}`;
+}
+
 function withinRange(dateValue) {
   const year = dateValue.getUTCFullYear();
   if (year < MIN_PLAUSIBLE_YEAR || year > MAX_PLAUSIBLE_YEAR) return null;
@@ -760,7 +971,16 @@ export function deriveRecord(register, data) {
   const dueRaw = pick('due');
   const dueDate = toDateOnly(dueRaw);
 
-  const status = normaliseStatus(pick('status')) ?? 'Not Started';
+  /**
+   * The status, and where a register with no status column gets one.
+   *
+   * `statusFrom` names a second column to read when the first is empty — for
+   * quality audits, the verdict, so a compliance lands closed and a
+   * non-compliance lands open. An explicit status always wins: the fallback is
+   * for rows nobody has ruled on yet, not a rule that overrides the team.
+   */
+  const statusSource = pick('status') ?? pick('statusFrom');
+  const status = normaliseStatus(statusSource) ?? 'Not Started';
   const priority = normalisePriority(pick('priority')) ?? 'Medium';
 
   const title = pick('title');
@@ -778,7 +998,7 @@ export function deriveRecord(register, data) {
     priority,
     priorityRaw: pick('priority') === null ? null : String(pick('priority')),
     status,
-    statusRaw: pick('status') === null ? null : String(pick('status')),
+    statusRaw: statusSource === null ? null : String(statusSource),
     actionBy: pick('actionBy') === null ? null : String(pick('actionBy')).trim(),
     initiator: pick('initiator') === null ? null : String(pick('initiator')).trim(),
     area: pick('area') === null ? null : String(pick('area')).trim(),

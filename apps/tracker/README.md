@@ -21,6 +21,7 @@ refresh — no emailing workbooks around to find out which copy is current.
 | CTS Recommendation | Recommendations from CTS investigations | ETC |
 | PDM | Predictive maintenance findings (VA, OA) | Target Date |
 | QC Report | Quality audits of completed work orders | — (see below) |
+| Quality Audit | PM/CM quality audits of work in the field | — (see below) |
 
 Each register keeps **its own columns** — an IWS row really is not a PDM row, and
 flattening them would lose the Notification and WO numbers, the calibration dates
@@ -29,7 +30,7 @@ and the vibration findings that make each sheet worth keeping.
 What makes one dashboard possible is that every register declares which of its own
 columns answers each shared question: *what is this, who owns it, when is it due,
 how urgent is it.* That mapping lives in one place —
-[`src/registers.js`](src/registers.js) — and adding a ninth register is a change
+[`src/registers.js`](src/registers.js) — and adding a tenth register is a change
 to that file and nothing else.
 
 ---
@@ -40,6 +41,22 @@ to that file and nothing else.
   every register the reader may open.
 - **A ring per register** — overdue, due within 30 days, open, closed — summing to
   that register's total, with all four printed beside it.
+- **Period** — a from/to range, with This month / Last month / Last 90 days /
+  This year to hand, narrowing every figure below it. **Count by** decides which
+  date the range means, because the registers do not agree on the answer: a work
+  scope is planned around its target date, while a quality audit has no target
+  date at all and only knows the day it was carried out. *Either date* is the
+  default so that one range covers both. The range is remembered across
+  refreshes — and whenever one is set the screen says how many entries it is
+  showing out of how many, since a narrowed dashboard otherwise looks exactly
+  like an empty database.
+- **Quality audits** — how many were carried out, how many found compliance, how
+  many raised a non-compliance, and how many findings are still open. A separate
+  count from open/overdue and not a substitute for it: an audit is a finding
+  about work already done, not work waiting to be done. A blank verdict is
+  reported as *No verdict* rather than folded into either side, since counting
+  an unjudged row as compliant would flatter the very number the register exists
+  to report. The card is hidden entirely until there are audits.
 - **Needs attention** — everything overdue or due inside a month, soonest first.
 - **Recent changes** — who changed what, and when. **Admins only**: it is a
   supervision record rather than a working tool, and the team can already see
@@ -87,7 +104,11 @@ obvious than they look:
   on a phone is battery spent on a still picture.
 
 Priority, status, action owner, initiator and due window are all filterable inside
-each register, and the table sorts on any column.
+each register, and the table sorts on any column. So is a **date range**: two
+date boxes and, where a register keeps two dates, a select naming them in that
+register's own words — *Target Date* or *Date Issued* on IWS, *ETC* or *Date* on
+Action Notice. A register with one date gets no select, because a dropdown with
+one option is a question with no answer.
 
 **Enter saves** in the entry drawer, as it does on the sign-in form — except in a
 description or remarks box, where Enter is a new line, and on a date field, where
@@ -208,9 +229,9 @@ a sheet called `Sheet1`. Columns decide; the name only breaks a tie.
 
 ### QC is shaped differently, and it matters
 
-The other seven registers track work that is *going to* happen, so each has a
-target date. A QC row records an audit that has **already** happened, and the
-workbook has no due-date column at all.
+The work registers track jobs that are *going to* happen, so each has a target
+date. A QC row records an audit that has **already** happened, and the workbook
+has no due-date column at all.
 
 So QC rows never appear in Overdue, in Due-in-30-days, or in a reminder email.
 They are counted as undated, which is the honest answer — deriving a due date
@@ -228,8 +249,8 @@ Three things about that sheet were worth handling explicitly:
   would have read as 850 jobs nobody had begun. Phrases are matched when the
   whole cell is not a known word, testing "still outstanding" before "finished"
   — a sentence can hold both, and reading `TO BE DONE` as done is the more
-  expensive mistake. The seven registers that do use a proper vocabulary are
-  matched exactly and never reach it.
+  expensive mistake. The registers that do use a proper vocabulary are matched
+  exactly and never reach it.
 - **`Quality Overall %` is an Excel percentage**, so 90% is stored as `0.9`.
   Anything at or below 1 is scaled to a whole percent; anything above is taken as
   already being one, so a sheet holding a plain `90` reads correctly too.
@@ -242,6 +263,39 @@ Three things about that sheet were worth handling explicitly:
 `Execution` means the audit found work to do — so it fills the priority role. The
 table shows the derived priority with the sheet's own word beneath it, rather
 than replacing `Execution` with `High`.
+
+### Quality Audit is shaped differently again
+
+An auditor walks a live job, checks the permit against what is actually going on,
+and writes down one of two verdicts. That verdict is the point of the register,
+and three things follow from it.
+
+**The verdict carries the status.** The sheet has no status column, and a register
+where everything defaults to *Not Started* would fill up with jobs nobody can
+ever close — most audits find nothing wrong, and there is no work to track in a
+job done correctly. So a `Compliance` arrives closed and a `Non compliance`
+arrives open. The moment somebody fills in the Status column on a row, that wins:
+closing out a finding is a real event and has to be recordable. The mechanism is
+a `statusFrom` role naming a second column to read when the first is empty —
+general, not a special case bolted on for this register.
+
+Reading `Non compliance` as a clean audit is the expensive mistake of the two, so
+the two rules are ordered with the finding first. "noncompliance" contains
+"compliance".
+
+**The verdict carries the urgency too**, since there is no priority column: a
+non-compliance is High, a compliance is Low. Low rather than nothing, because the
+default is Medium — and a shelf of compliant audits marked Medium would colour
+every one of them in an export and crowd out the findings that matter.
+
+**The auditor is the initiator, not the owner.** They found it; somebody else
+fixes it. `Action By` and `Target Date` are declared and empty, ready for the day
+the team starts following findings to their close-out.
+
+One more thing the sheet needed: **Excel has no time-only type.** A cell showing
+`09:00` holds a fraction of a day, which arrives as a moment on 30 December 1899
+— Excel's epoch. Read as an ordinary date it becomes "1899-12-30", which is how
+the audit times first imported. A `time` field keeps the clock and nothing else.
 
 ## Excel export
 
@@ -604,7 +658,7 @@ it uses that instead; the tables are created on boot.
 | `TRACKER_TWILIO_SID` · `TRACKER_TWILIO_TOKEN` · `TRACKER_TWILIO_FROM` | — | Send WhatsApp unattended through Twilio |
 
 ```bash
-pnpm --filter @intoto/tracker test     # 92 tests, no database needed
+pnpm --filter @intoto/tracker test     # 103 tests, no database needed
 ```
 
 ---
